@@ -1,0 +1,8 @@
+{
+  "name": "ihaveacat",
+  "private": true,
+  "description": "ihavea.cat page",
+  "scripts": {
+    "test": "node --test"
+  }
+}
