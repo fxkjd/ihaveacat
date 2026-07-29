@@ -37,3 +37,26 @@
     .moon-3 {
     	color: #514F44;
     }
+    @media (max-width: 480px) {
+	pre {
+	    font-size: 2.8vw;
+	}
+    }
+    @keyframes twinkle {
+	0%, 100% { opacity: 1; }
+	50%      { opacity: 0.25; }
+    }
+    .star {
+    	animation: twinkle 3.2s ease-in-out infinite;
+    }
+    .star:nth-of-type(2n) {
+    	animation-duration: 2.4s;
+    	animation-delay: 0.7s;
+    }
+    .star:nth-of-type(3n) {
+    	animation-duration: 4.1s;
+    	animation-delay: 1.3s;
+    }
+    .star:nth-of-type(5n) {
+    	animation-delay: 2.1s;
+    }
