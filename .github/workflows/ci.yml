@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          # No `cache:` — npm caching REQUIRES a lockfile and hard-fails without
+          # one ("Dependencies lock file is not found"). This repo has no deps.
+
+      # No `npm ci` / `npm install` — `npm ci` refuses to run without a lockfile
+      # and `npm install` would create one, breaking the zero-dependency rule.
+      - name: Run tests
+        run: npm test
+
+      - name: Run tests in a non-UTC timezone
+        run: npm test
+        env:
+          TZ: Pacific/Kiritimati # UTC+14, guards the date math
+
+  hygiene:
+    name: repo hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: No lockfile or vendored modules committed
+        run: |
+          locks="$(git ls-files package-lock.json npm-shrinkwrap.json yarn.lock pnpm-lock.yaml bun.lockb)"
+          if [ -n "$locks" ]; then
+            echo "::error::lockfile committed; this project must stay dependency-free: $locks"
+            exit 1
+          fi
+          if [ -n "$(git ls-files node_modules)" ]; then
+            echo "::error::node_modules is committed"
+            exit 1
+          fi
+
+      - name: Classic scripts only (no ES modules, no build step)
+        run: |
+          if grep -REn '^[[:space:]]*(import|export)[[:space:]]' js/; then
+            echo "::error::ES module syntax found in js/ (page must work from file://)"
+            exit 1
+          fi
+          if grep -En 'type="module"|src="/|href="/' index.html; then
+            echo "::error::index.html uses a module script or an absolute path (breaks file://)"
+            exit 1
+          fi
+
+      - name: No dependency fields in package.json
+        run: |
+          node -e '
+            const p = require("./package.json");
+            const bad = ["dependencies","devDependencies","optionalDependencies","peerDependencies","bundleDependencies"]
+              .filter(k => p[k] && Object.keys(p[k]).length);
+            if (bad.length) { console.error("::error::package.json declares " + bad.join(", ")); process.exit(1); }
+          '
