@@ -104,6 +104,15 @@
         }).join('');
     }
 
+    // Each row paired with its indent, for callers that composite the moon
+    // into a larger scene and need to know where each row starts.
+    function renderMoonRows(phase) {
+        var cells = renderMoonCells(phase);
+        return MOON_ROWS.map(function (row, i) {
+            return { indent: row.indent, cells: cells[i] };
+        });
+    }
+
     function escapeHTML(text) {
         return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
@@ -141,7 +150,8 @@
         phaseName: phaseName,
         renderMoonCells: renderMoonCells,
         moonRowText: moonRowText,
-        renderMoonRowHTML: renderMoonRowHTML
+        renderMoonRowHTML: renderMoonRowHTML,
+        renderMoonRows: renderMoonRows
     };
 
     if (typeof module !== 'undefined' && module.exports) {

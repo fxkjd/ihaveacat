@@ -1,19 +1,18 @@
-    html {
+    html, body {
 	width: 100%;
 	height: 100%;
+	margin: 0;
+	padding: 0;
+	overflow: hidden;
     }
     body {
 	position: relative;
-	float: left;
 	z-index: 1;
 	background-color: #537895;
 	background-image: linear-gradient(315deg, #537895 0%, #09203f 74%);
 	text-align: left;
 	color: white;
-        margin: 0 auto;
-        font-family: Tahoma, Verdana, Arial, sans-serif;
-	width: 100%;
-	height: 100%;
+	font-family: Tahoma, Verdana, Arial, sans-serif;
     }
     div {
 	position: absolute;
@@ -24,6 +23,28 @@
     pre {
     	display: inline-block;
 	text-align: left;
+    }
+    /*
+     * Once js/main.js takes over it rebuilds this into a full-bleed grid
+     * with an explicit monospace stack (the fallback above has none, and
+     * inherits the UA default). Ligatures/kerning are killed because a
+     * user's default monospace could be a coding font that ligates
+     * `/\`, `=\`, `--`, `===` — which would silently break the character
+     * grid the scene math depends on.
+     */
+    html.js div {
+	left: 0;
+	text-align: left;
+    }
+    html.js pre {
+	display: block;
+	margin: 0;
+	white-space: pre;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace;
+	font-variant-ligatures: none;
+	font-feature-settings: "liga" 0, "clig" 0, "calt" 0;
+	font-kerning: none;
+	/* font-size and line-height are set inline by main.js */
     }
     .collar {
     	color: #C00000;
@@ -37,8 +58,22 @@
     .moon-3 {
     	color: #514F44;
     }
+    .lawn {
+	color: #6f9179;
+    }
+    /*
+     * The fence spans the whole viewport, so at the cat's pure white it
+     * outweighed the cat itself. Muted weathered-wood brown keeps it as
+     * background while reading as timber rather than metal.
+     */
+    .fence {
+	color: #8a7259;
+    }
+    .vine {
+	color: #4f8a63;
+    }
     @media (max-width: 480px) {
-	pre {
+	html:not(.js) pre {
 	    font-size: 2.8vw;
 	}
     }
@@ -48,15 +83,27 @@
     }
     .star {
     	animation: twinkle 3.2s ease-in-out infinite;
+    	animation-delay: -0.4s;
     }
-    .star:nth-of-type(2n) {
+    /*
+     * Negative delays start each star mid-cycle at a deterministic phase
+     * rather than restarting on element creation, so a resize-triggered
+     * rebuild doesn't make every star blink in lockstep.
+     */
+    .star-1 {
     	animation-duration: 2.4s;
-    	animation-delay: 0.7s;
+    	animation-delay: -0.7s;
     }
-    .star:nth-of-type(3n) {
+    .star-2 {
     	animation-duration: 4.1s;
-    	animation-delay: 1.3s;
+    	animation-delay: -1.3s;
     }
-    .star:nth-of-type(5n) {
-    	animation-delay: 2.1s;
+    .star-3 {
+    	animation-duration: 3.6s;
+    	animation-delay: -2.1s;
+    }
+    @media (prefers-reduced-motion: reduce) {
+	.star, .star-1, .star-2, .star-3 {
+	    animation: none;
+	}
     }
