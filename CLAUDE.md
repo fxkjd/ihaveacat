@@ -1,235 +1,151 @@
 # ihaveacat
 
-Source code for https://ihavea.cat/ — a single-page ASCII-art site: stars, a cat
-("Sóc un gat"), a fence with a lawn, and a moon whose art renders the **real
-current lunar phase**, computed from the date on each page load (8 standard
-phases: new → waxing crescent → first quarter → waxing gibbous → full → waning
-gibbous → last quarter → waning crescent).
+Source for https://ihavea.cat/ — a single-page ASCII-art scene: stars, a cat
+("Sóc un gat"), a fence with a lawn, and a moon showing the **real current lunar
+phase**, computed from the date on each page load.
 
-The scene is **responsive**: it composes to fill the browser window at any size,
-with JavaScript enabled. The cat, moon and fence keep a constant proportion of
-the window (they grow with it) and are always fully visible; the sky fills with
-stars and the ground with a lawn to use whatever space is left.
+With JavaScript on, the scene composes to fill the window at any size: the cat
+and moon hold a constant proportion of the viewport while the sky and ground
+fill whatever is left. With JavaScript off, the static art in `index.html`
+shows instead.
 
 ## Commands
 
-- `npm test` — runs `node --test` (built-in runner, nothing to install).
-- `open index.html` — view the page; it must always work via `file://`.
-- CI runs the same suite on pull requests and pushes to `main`
-  (`.github/workflows/ci.yml`).
+- `npm test` — `node --test`, nothing to install.
+- `open index.html` — must always work over `file://`.
+- CI runs the suite on PRs and pushes to `main` (`.github/workflows/ci.yml`).
 
 ## Hard constraints
 
-- Pure HTML + vanilla JS. **Zero dependencies**, runtime and tests.
-- No build step, no dev server, no ES modules — classic scripts only, so the
-  page works opened directly from the filesystem.
-- **No inline `<script>`, `<style>`, `style=` attributes or `on*` handlers in
-  `index.html`.** The live site serves
-  `Content-Security-Policy: default-src 'self'`, which blocks all of them
-  outright — and silently, so whatever they set up simply never happens.
-  Anything the page needs at load time goes in an external script, or is applied
-  by `main.js` through CSSOM (`el.style.x = …`, which CSP does allow). A test
-  enforces this.
-- The `<pre>` must always declare an explicit monospace family. Left to the UA
-  default, Firefox resolves it to the internal value `-moz-fixed`, which
-  `main.js` cannot copy onto its measuring probe — the probe then silently
-  measures a proportional font and the whole character grid is mis-sized.
-- Art fidelity: the cat, star glyphs, and fence pattern stay exactly as in the
-  original art; the moon keeps its silhouette and its M/8/& + `moon-1/2/3`
-  color-band style.
-- **The cat and moon keep a constant proportion of the window at every size**
-  (owner decision) — they grow with the window rather than being capped at a
-  fixed pixel size. There is deliberately no font-size cap; see "Sizing" below
-  for the one knob that *is* meant to be tuned.
-- **The fence, cat and moon are always fully visible**, at any window size.
-- **The fence spans the whole viewport, running off both edges** (owner
-  decision). It deliberately has no visible end: when it stopped at a fixed
-  width it terminated in a full-height post, and that 6-row vertical cut into
-  the lawn read as an ugly "steep" edge. A tapered end was tried and rejected —
-  even after stepping down it left a noticeable drop. This supersedes the
-  earlier decision that the fence stay ~45 columns wide.
-- **The fence must stay visually subordinate to the cat and moon.** Because it
-  now spans the viewport, it had to stop being pure white — at the cat's own
-  colour it outweighed the cat itself. It is `.fence` (muted slate), weathered
-  with occasional sagging/missing pickets, and carries sparse green `.vine`
-  climbers. Do not restore it to the body's white.
-- **The pickets around the cat's tail (core cols 8-20) are never weathered or
-  vined** — the tail weaves through them and detaches if a post there sags or
-  disappears. `Scene.picketState` and `Scene.vineRows` both enforce this, and
-  tests pin it.
-- **The cat's silhouette must be entirely white.** The cat stands *in front of*
-  the fence, so the rail row is occluded across its base (`CAT_BASE_WIDTH`
-  columns from `CAT_COL`) and the whole tail patch renders in the cat's colour.
-  Without the occlusion the rail's brown peaks butt into the cat's leg tips and
-  the legs look like they turn brown; without the white tail patch the rail
-  closes the gap between the legs and greys out the cat's base.
-- Star density stays close to the original art's (~1.1%, about one star per 88
-  sky cells) at every window size.
-- The static moon markup in `index.html` is the no-JS fallback — don't remove
-  it. It renders as today's fixed, non-responsive art when JavaScript is off.
-- No extras by explicit owner decision: no `?date=`/`?phase=` URL params, no
-  phase-name label.
+- Pure HTML + vanilla JS, **zero dependencies** in runtime and tests. No build
+  step, no dev server, no ES modules — classic scripts only.
+- **No inline `<script>`, `<style>`, `style=` or `on*` in `index.html`.** The
+  live site sends `Content-Security-Policy: default-src 'self'`, which blocks
+  them *silently* — whatever they set up simply never happens. Load-time work
+  goes in an external script, or `main.js` applies it through CSSOM
+  (`el.style.x = …`, which CSP does allow).
+- **The `<pre>` must declare an explicit monospace family.** Left to the UA
+  default, Firefox resolves it to `-moz-fixed`, which `main.js` cannot copy onto
+  its measuring probe — it then measures a *proportional* font and mis-sizes the
+  entire grid.
+- **Art fidelity**: the cat, star glyphs and fence pattern stay as in the
+  original art; the moon keeps its silhouette and `moon-1/2/3` bands.
+- **The static art in `index.html` is the no-JS fallback** — don't remove it.
+- Owner decisions: no `?date=`/`?phase=` URL params, no phase-name label.
+
+All of the above are enforced by tests.
 
 ## Architecture
 
-- `js/moon.js` — moon phase math + ASCII cell generation, pure and DOM-free
-  (UMD-lite: `window.MoonPhase` in the browser, `module.exports` under Node).
-- `js/scene.js` — composes the full scene (sky + stars, moon, cat, fence, lawn)
-  for a given grid size. Pure and DOM-free, same UMD-lite shape as `moon.js`,
-  and does **not** require `moon.js` — callers pass rendered moon rows in via
-  `MoonPhase.renderMoonRows(phase)`, so the two modules stay independently
-  testable. Owns the sizing math (`fitFontSize`/`fitGrid`), the layout
-  (`layout`), the sprite data (fence generator + tail patch, cat art, moon
-  placement), and the seeded, dependency-free placement of stars and lawn
-  tufts (no `Math.random`, so output is deterministic).
-- `js/main.js` — browser wiring only: measures monospace character metrics with
-  an offscreen probe, derives the font size and grid size from the viewport via
-  `Scene`, and paints the result into `<pre id="scene">` with
-  `createElement`/`createTextNode`/`textContent` (no `innerHTML`). Re-renders on
-  resize. If anything fails before the first paint, the static fallback art is
-  left in place rather than cleared.
-- `test/moon.test.js` — `node:test` + `node:assert/strict`. Pins the algorithm
-  to published astronomical dates and asserts rendering invariants (silhouette
-  preserved, waxing/waning orientation, mirror symmetry, terminator presence).
-- `test/scene.test.js` — pins art fidelity (fence/cat reproduce the original
-  site art byte-for-byte), the sizing math (worked examples plus a sweep
-  guaranteeing the core composition never overflows the viewport), layout
-  invariants across a wide range of grid sizes, determinism and resize
-  stability (growing the grid translates the star field instead of
-  reshuffling it), star/lawn placement, and moon integration.
-- `test/page.test.js` — checks the static fallback art hasn't silently drifted
-  from `js/scene.js`, `file://`/script-order/case-sensitivity safety, that
-  every CSS class the scene can emit is actually styled, and that both UMD
-  modules expose their browser global correctly.
-- Vines spiral: leaves alternate sides of the post as they climb, both sides at
-  the rooted base, thinning to a tendril at the tip. A straight column of glyphs
-  beside the post was tried first and read as a dotted line, not a plant. Two
-  neighbouring posts never both carry a vine — their leaves meet and read as a
-  hedge, the same failure mode as adjacent missing pickets.
-- Fence weathering and vines are deterministic (`hash2` on core-relative picket
-  columns, no randomness source), so the fence is identical on every load and
-  does not reshuffle while the window is resized. Note `picketState` extracts
-  hash bits with `>>> 12`: `hash2`'s low bits are measurably biased for post
-  columns (all multiples of 3) and skewed the rates badly. `fenceChar` stays the
-  plain unweathered pattern so `FENCE_ART` — and therefore the no-JS fallback in
-  `index.html` — is unaffected; `fenceSceneChar` is the weathered one the scene
-  actually draws.
-- `css/style.css` — original site styling plus an explicit monospace stack with
-  ligatures/kerning disabled (a coding font's default ligatures for `/\`, `=\`,
-  `===` would silently break the character grid), and the `.fence`/`.lawn`/
-  `.vine`/star-variant classes. The `pre` rules are the no-JS fallback's layout
-  (centred inline-block, and `2.8vw` under 480px); `main.js` overrides them with
-  inline styles when it takes over.
-- `favicon.ico` — original site asset, unchanged.
+- `js/moon.js` — phase math and moon cell generation. Pure, DOM-free, UMD-lite
+  (`window.MoonPhase` / `module.exports`).
+- `js/scene.js` — composes the whole scene for a grid size: sizing math
+  (`fitFontSize`/`fitGrid`), `layout()`, sprite data, and seeded placement of
+  stars, lawn, weathering and vines. **Pure**: no DOM, no `Date`, no
+  `Math.random`, no timers. It does *not* require `moon.js` — callers pass
+  `MoonPhase.renderMoonRows(phase)` in, so the two stay independently testable.
+- `js/main.js` — browser wiring only. Measures character metrics with an
+  offscreen probe, derives font and grid size from the viewport, and paints into
+  `<pre id="scene">` with `createElement`/`textContent` (never `innerHTML`).
+  Owns **all timing and randomness**. Each row is its own `<span>`, so an
+  animation frame repaints only the rows that changed. If anything fails before
+  the first paint, the static fallback is left alone.
+- `css/style.css` — site styling, the monospace stack with ligatures and kerning
+  disabled (a coding font ligating `/\`, `=\`, `===` would break the character
+  grid), and the `.fence`/`.lawn`/`.vine`/`.meteor`/star classes. The bare `pre`
+  rules are the no-JS fallback's layout; `main.js` overrides them inline.
+- `test/moon.test.js` — pins the algorithm to published dates plus the moon's
+  rendering invariants.
+- `test/scene.test.js` — pins art fidelity byte-for-byte, sizing and layout
+  sweeps, determinism and resize stability, placement, and the animations.
+- `test/page.test.js` — fallback drift, `file://`/script-order/case safety, CSP
+  cleanliness, CSS class coverage, and both UMD browser globals.
 
-## Idle animations
+## Scene rules
 
-Two timed animations, both driven from `js/main.js`:
+- **The cat and moon hold a constant proportion of the window** at every size,
+  and they and the fence are always fully visible. The always-visible core is
+  45×29 cells; `BASE_COLS` (53) × `BASE_ROWS` (44) is the smallest grid it fits
+  in, and `fitGrid` never returns less. There is deliberately **no font-size cap
+  or floor**: a cap breaks "constant proportion", a floor breaks "always
+  visible", and a 4K window rendering proportionally larger characters is the
+  requirement working, not a bug. To make the art smaller relative to the
+  window, raise `BASE_ROWS` (in practice `TOP_PAD_ROWS`) — the only intended knob.
+- **The moon is anchored to the cat**, `MOON_CAT_GAP_ROWS` (8) above it, never to
+  the top of the screen. The cat hangs off the bottom via the fence, so anchoring
+  the moon to row 0 made the gap grow without bound on tall windows.
+- **The fence spans the whole viewport**, running off both edges, so it has no
+  visible end. A fixed-width fence ended in a full-height post that read as an
+  ugly cut, and a tapered end still left a drop.
+- **The fence stays subordinate to the cat and moon** — muted brown `.fence`,
+  weathered with occasional sagging and missing pickets, and sparse `.vine`
+  climbers. At the cat's white it outweighed the cat itself.
+- **The pickets around the cat's tail (core cols 8–20) are never weathered or
+  vined** — the tail weaves through them. Enforced in `picketState`/`vineRows`.
+- **The cat's silhouette is entirely white.** It stands *in front of* the fence,
+  so the rail is occluded across its base and the tail region takes the cat's
+  colour. Otherwise the rail's brown butts into the leg tips and closes the gap
+  between the legs, greying out the cat's base.
+- Star density stays near the original ~1.1% (one per ~88 sky cells) at any size.
+- `GROUND_EXTRA_ROWS` (2) is the lawn's thickness, drawn strictly below the
+  fence; `LAWN_ROW_DENSITY` must have exactly that many entries. It is balanced
+  against `TOP_PAD_ROWS` (13) to keep `BASE_ROWS` at 44 — change them as a pair
+  unless you mean to resize the art.
+- `CORE_COLS` (45) is the width reserved for the cat and moon, not the fence
+  (which is unbounded).
 
-- **Tail wag** — every 5–10 s, a full sweep through `Scene.TAIL_WAG_SEQUENCE`
-  at ~180 ms per frame (rest → right → left → rest, ~2.3 s), then back to rest.
-- **Shooting star** — every 20–30 s. One of seven `Scene.METEOR_PATHS` is picked
-  at random, so meteors vary in slope and direction. It enters above the top
-  edge and exits past the bottom of the sky, so it is never seen popping in or
-  out.
+## Animations
 
-Rules these must keep:
+Scheduled from `main.js`; `scene.js` takes the current `tailFrame` and `meteor`
+head as plain inputs and stays pure.
 
-- **All timing and randomness lives in `main.js`.** `scene.js` takes the current
-  `tailFrame` and `meteor` head position as plain inputs and stays pure — that
-  is what keeps the animations unit-testable. A test forbids timers in
-  `scene.js`.
-- **`buildScene` with no animation options must render exactly the resting
-  page.** Pinned by a test, so the feature cannot drift the static scene.
-- **The tail is drawn in front of the fence and erases what it covers.** Each
-  pose gives every row its own column, and the sprite is blitted opaquely
-  *after* the fence and vines — so fence posts under the tail disappear while
-  covered and come back on their own as it swings away (every frame is rebuilt
-  from scratch). This is deliberate: an earlier version boxed the tail into five
-  columns to protect the posts, which limited it to a tiny rightward-only
-  twitch.
-- **`TAIL_REST_FRAME` is the resting pose and fence row 0 never animates** —
-  row 0 is the cat's rear (`CAT_BASE_ART`), where the tail attaches, and the
-  body must not move. Poses describe fence rows 1–3 only.
-- **The tail is a pendulum**: the attachment travels least and the tip most. A
-  test pins that ordering, and that the sweep is symmetric about rest.
-- **Tail glyphs express slope, not just position** — `/` leaning left, `\`
-  leaning right, `|` hanging straight, and the original curved parens at rest.
-  Drawing every pose with the same `( )` curves and only moving them made the
-  tail look like it was teleporting rather than rotating. The tail is two
-  parallel strokes two columns apart (it is outlined, like the cat), closed at
-  the tip by `_`.
-- **Meteor trails are generated, not hand-authored.** `meteorCells` walks back
-  along the flight line one cell at a time on the dominant axis; stepping by the
-  raw `dx/dy` would leave gaps on any path that isn't 45°. It uses **one stroke
-  glyph for the whole streak**, from the path's overall slope, then fades to
-  `.`. Choosing a glyph per cell from its local step looked chunky: on a shallow
-  path most steps are horizontal but every few cells drops a row, so the trail
-  came out `- - \ - - \` — a visible staircase.
-- **A meteor dies on contact with the cat**, tested against the cat's *bounding
-  box* rather than its glyphs. The cat is an outline — most of its box is blank
-  — so a glyph-only test let the streak draw straight through its body. That was
-  a real bug. The fence needs no such test: cells at or below the horizon are
-  clipped per-cell, so a meteor slides behind it instead of popping out.
-- Both animations are skipped under `prefers-reduced-motion`, matching the CSS
-  guard that already disables the star twinkle.
+- **Tail wag** — every 5–10 s, a full sweep through `TAIL_WAG_SEQUENCE` at
+  ~180 ms per frame, then back to rest.
+- **Shooting star** — every 20–30 s on one of seven random `METEOR_PATHS`. It
+  enters above the top edge and exits below the sky, so it never pops in or out.
 
-`main.js` wraps each grid row in its own `<span>` and repaints only the rows
-whose contents changed, so an animation frame touches a handful of rows rather
-than rebuilding the whole grid.
+Rules:
+
+- **`buildScene` with no animation options renders exactly the resting page**, so
+  the feature cannot drift the static scene.
+- The tail is blitted **in front of** the fence and vines and erases what it
+  covers; posts under it return on their own as it swings past. Boxing it in to
+  protect those posts once limited it to a tiny rightward twitch.
+- Fence row 0 never animates — it is the cat's rear (`CAT_BASE_ART`), where the
+  tail attaches. Poses cover fence rows 1–3 only.
+- The tail is a **pendulum** (attachment travels least, tip most) and its glyphs
+  express **slope**: `/`, `\`, `|`, and the curved parens at rest. Using the same
+  curves at every pose made it look like it was teleporting rather than rotating.
+- Meteor trails are generated: `meteorCells` walks back along the flight line one
+  cell at a time on the dominant axis, using **one stroke glyph** taken from the
+  path's overall slope, fading to `.`. Stepping by raw `dx/dy` leaves gaps off
+  45°, and per-cell glyphs produced a `- - \ - - \` staircase on shallow paths.
+- **A meteor dies on contact with the cat's bounding box**, not its glyphs: the
+  cat is an outline, so most of its box is blank and a glyph test let streaks
+  draw straight through its body. The fence needs no such test — cells at or
+  below the horizon are clipped, so meteors slide behind it.
+- Both are skipped under `prefers-reduced-motion`, matching the CSS twinkle guard.
+
+## Determinism
+
+Stars, lawn, weathering and vines are placed by `hash2` over core-relative
+coordinates with no randomness source, so the scene is identical on every load
+and *translates* rather than reshuffles when the window resizes.
+
+Two traps live here:
+
+- `picketState` takes its hash bits with `>>> 12`. `hash2`'s low bits are
+  measurably biased for post columns (all multiples of 3) and skewed the rates.
+- `fenceChar` is the plain unweathered pattern and feeds `FENCE_ART`, and so the
+  no-JS fallback; `fenceSceneChar` is the weathered one the live scene draws.
+  Keep them separate.
 
 ## Moon algorithm
 
 Days since the known new moon of 2000-01-06 18:14 UTC, mod the synodic month
-(29.530588853 d), gives the phase fraction; `phaseIndex = Math.round(f * 8) % 8`
-puts each phase in a window centered on the astronomical event (±1.85 d).
-Waxing lights from the right, waning from the left (Northern Hemisphere).
-Cells are shaded against the global 13-column disc width, giving a straight
-vertical terminator; the waning crescent exactly reproduces the site's original
-static art rows (`MMM88&&&&&&&&`).
-
-## Sizing
-
-The always-visible "core" (moon + cat, in their original relative spacing, down
-to the fence line) is 45×29 cells. `Scene.BASE_COLS` (53) and `Scene.BASE_ROWS` (44) are
-the smallest grid the core fits in with a little padding; `Scene.fitGrid` never
-returns anything smaller, which is what guarantees full visibility. Character
-size is derived from the viewport (`Scene.fitFontSize`) so the core keeps a
-constant proportion of the window — there is intentionally no pixel cap, since
-a cap is exactly what would break that property. A 4K window rendering at
-proportionally larger characters than 1080p is the requirement working as
-intended, not a bug.
-
-If the composition ever needs to look smaller relative to the window (e.g. on
-very large displays), the constant to tune is **`Scene.BASE_ROWS`** (in
-practice via `TOP_PAD_ROWS`, see below) — raising it shrinks every character
-proportionally while keeping the core fully visible and centered. Do not add a
-font-size cap or floor instead; both were considered and rejected because they
-break "constant proportion" and "always visible" respectively.
-
-**The moon is anchored to the cat, not to the top of the screen.** It sits a
-fixed `Scene.MOON_CAT_GAP_ROWS` (8, matching the original static art's spacing)
-rows above the cat at every grid size — `layout()` computes `moonBottom` from
-`catTop`, not from row 0. Anchoring it to the screen top instead was tried and
-was a bug: on a tall/portrait window the cat (anchored to the bottom via the
-fence/`groundRow` chain) sinks lower while a top-anchored moon stays pinned
-near the top edge, so the gap between them grows without bound. If the moon
-ever needs repositioning, change `MOON_CAT_GAP_ROWS`, not the anchor.
-
-`TOP_PAD_ROWS` (13) is the sky-row count above the moon *at the base grid
-specifically* — it's what you tune to change the overall scale (see above), not
-the moon's literal position at other sizes. `GROUND_EXTRA_ROWS` (2) is the
-lawn's thickness: the lawn renders exactly that many rows, strictly *below* the
-fence, full width, regardless of window height; `Scene.LAWN_ROW_DENSITY` must
-have exactly that many entries.
-
-These two are deliberately balanced so `BASE_ROWS` stays 44: when the fence
-became full-width the lawn had to move a row down (its first row used to be the
-fence's own base row, painted only in the gaps beyond the fence's ends — with no
-ends left, that row would have rendered no grass at all). `GROUND_EXTRA_ROWS`
-went 1→2 and `TOP_PAD_ROWS` 14→13 so the overall scale did not shift. Adjust
-them as a pair unless you actually intend to resize the art.
-
-`CORE_COLS` (45) no longer describes the fence — the fence is unbounded. It is
-now just the width reserved for the cat and moon composition, and `fitGrid`
-guarantees it always fits.
+(29.530588853 d), give the phase fraction; `phaseIndex = round(f * 8) % 8` puts
+each phase in a window centred on the astronomical event (±1.85 d). Waxing
+lights from the right, waning from the left (Northern Hemisphere). Cells are
+shaded against the 13-column disc width, giving a straight vertical terminator;
+the waning crescent exactly reproduces the original static art rows
+(`MMM88&&&&&&&&`).
