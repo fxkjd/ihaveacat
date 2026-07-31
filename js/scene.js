@@ -78,6 +78,43 @@
     var TAIL_PATCH_IS_CAT = [true, true, true, true, false, false];
 
     /*
+     * Tail wag. Frame 0 is TAIL_PATCH verbatim, so the resting page is
+     * unchanged. Every frame must stay inside the patch's 5 columns
+     * (TAIL_PATCH_COL .. +4): the patch is blitted opaquely, so a glyph
+     * straying outside would erase a fence post for that frame and make the
+     * posts blink as the tail moves.
+     *
+     * The rest pose sits flush against the patch's left edge, so the wag
+     * sweeps rightward and back. Row 0 never moves — it is the cat's rear,
+     * where the tail attaches, and the body stays still. Lower rows shift
+     * before upper ones so the tail bends rather than sliding rigidly (the
+     * swing), and the tip's curl inverts at full extension (the ripple).
+     */
+    var TAIL_WAG_FRAMES = [
+        ['_  _/', '( (  ', ' ) ) ', '(_(  ', null, null],   // 0: rest
+        ['_  _/', '( (  ', '  ) )', ' (_( ', null, null],   // 1: mid
+        ['_  _/', ' ( ( ', '  ) )', ' )_) ', null, null]    // 2: full swing
+    ];
+    // One burst of wagging, as frame indices. Played then left at rest.
+    var TAIL_WAG_SEQUENCE = [0, 1, 2, 1, 0, 1, 2, 1, 0];
+
+    /*
+     * Shooting star: a bright head with a long trail fading behind it, on a
+     * 1:1 diagonal so every trail cell lies on the diagonal and `\` is the
+     * geometrically correct glyph. Index = cells behind the head.
+     */
+    var METEOR_TRAIL = [
+        { char: '*', cls: 'meteor' },
+        { char: '\\', cls: 'meteor' },
+        { char: '\\', cls: 'meteor' },
+        { char: '\\', cls: 'meteor-dim' },
+        { char: '-', cls: 'meteor-dim' },
+        { char: '-', cls: 'meteor-dim' },
+        { char: '.', cls: 'meteor-dim' },
+        { char: '.', cls: 'meteor-dim' }
+    ];
+
+    /*
      * Weathering. A few pickets sag or are missing so the fence reads as an
      * old garden fence rather than a printed band. Keyed on core-relative
      * picket columns via hash2, so it is identical on every load and does not
@@ -202,6 +239,31 @@
         if (!vineRawRows(post)) return 0;
         if (vineRawRows(post - 3)) return 0;
         return vineRawRows(post);
+    }
+
+    /*
+     * The cells a shooting star occupies for a given head position, nearest
+     * the head first. The trail runs back up-left along the diagonal. The head
+     * may sit off-grid so the streak enters and leaves the viewport naturally;
+     * callers clip. Pure — the caller owns where and when it flies.
+     */
+    function meteorCells(head) {
+        if (!head) return [];
+        var cells = [];
+        for (var i = 0; i < METEOR_TRAIL.length; i++) {
+            cells.push({
+                x: head.col - i,
+                y: head.row - i,
+                char: METEOR_TRAIL[i].char,
+                cls: METEOR_TRAIL[i].cls
+            });
+        }
+        return cells;
+    }
+
+    // The tail patch for a wag frame; out-of-range indices fall back to rest.
+    function tailPatch(frame) {
+        return TAIL_WAG_FRAMES[frame] || TAIL_WAG_FRAMES[0];
     }
 
     // The weathered fence as actually drawn in the scene (no tail patch).
@@ -447,9 +509,10 @@
         // Fence: drawn across every column so it runs off both edges of the
         // viewport and never shows an end. Opaque, so the tail patch's spaces
         // erase the post underneath rather than letting it show through.
+        var wagFrame = tailPatch(opts.tailFrame || 0);
         for (var fr = 0; fr < FENCE_ROW_COUNT; fr++) {
             var fy = L.fenceTop + fr;
-            var patch = TAIL_PATCH[fr];
+            var patch = wagFrame[fr];
             for (x = 0; x < cols; x++) {
                 var cc = x - L.coreLeft;
                 var inPatch = patch && cc >= TAIL_PATCH_COL &&
@@ -501,6 +564,21 @@
                     set(vx, L.fenceTop + vrow, vg, 'vine');
                 }
             }
+        }
+
+        // Shooting star: drawn last so it can see what is already there, but
+        // it only claims empty sky or a background star. That is what makes it
+        // pass BEHIND the moon and the cat instead of punching through them.
+        if (opts.meteor) {
+            meteorCells(opts.meteor).forEach(function (c) {
+                if (c.x < 0 || c.x >= cols || c.y < 0 || c.y >= rows) return;
+                if (c.y >= L.fenceTop) return;                  // sky only
+                var cell = grid[c.y][c.x];
+                var freeSky = cell.char === ' ' ||
+                    (cell.cls && cell.cls.indexOf('star') === 0);
+                if (!freeSky) return;
+                set(c.x, c.y, c.char, c.cls);
+            });
         }
 
         return { cols: cols, rows: rows, layout: L, grid: grid.map(toRuns) };
@@ -567,6 +645,9 @@
         CAT_BASE_COL: CAT_BASE_COL,
         CAT_BASE_ART: CAT_BASE_ART,
         TAIL_PATCH_IS_CAT: TAIL_PATCH_IS_CAT,
+        TAIL_WAG_FRAMES: TAIL_WAG_FRAMES,
+        TAIL_WAG_SEQUENCE: TAIL_WAG_SEQUENCE,
+        METEOR_TRAIL: METEOR_TRAIL,
 
         hash2: hash2,
         fenceChar: fenceChar,
@@ -575,6 +656,8 @@
         picketPost: picketPost,
         picketState: picketState,
         vineRows: vineRows,
+        tailPatch: tailPatch,
+        meteorCells: meteorCells,
         fenceRowText: fenceRowText,
         layout: layout,
         fitFontSize: fitFontSize,

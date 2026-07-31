@@ -122,6 +122,40 @@ stars and the ground with a lawn to use whatever space is left.
   inline styles when it takes over.
 - `favicon.ico` — original site asset, unchanged.
 
+## Idle animations
+
+Two timed animations, both driven from `js/main.js`:
+
+- **Tail wag** — every 5–10 s, a short burst through `Scene.TAIL_WAG_SEQUENCE`
+  at ~110 ms per frame, then back to rest.
+- **Shooting star** — every 20–30 s, a head plus long fading trail on a 1:1
+  diagonal, stepping down-right one cell per ~40 ms. It enters from above the
+  top edge and exits past the bottom of the sky, so it is never seen popping in
+  or out. It only claims blank sky or a background star, which is what makes it
+  pass *behind* the moon and cat instead of punching through them.
+
+Rules these must keep:
+
+- **All timing and randomness lives in `main.js`.** `scene.js` takes the current
+  `tailFrame` and `meteor` head position as plain inputs and stays pure — that
+  is what keeps the animations unit-testable. A test forbids timers in
+  `scene.js`.
+- **`buildScene` with no animation options must render exactly the resting
+  page.** Pinned by a test, so the feature cannot drift the static scene.
+- **Every wag frame must fit the tail's five columns** (`TAIL_PATCH_COL`..+4).
+  The patch is blitted opaquely, so a glyph straying outside would erase a fence
+  post for that frame and make the posts blink as the tail moves. The rest pose
+  sits flush against the left edge, so the wag sweeps rightward only; a
+  symmetric wag would need a wider patch, which would permanently delete a post.
+- **Frame 0 is the resting pose and row 0 never changes** — row 0 is the cat's
+  rear, where the tail attaches, and the body must not move.
+- Both animations are skipped under `prefers-reduced-motion`, matching the CSS
+  guard that already disables the star twinkle.
+
+`main.js` wraps each grid row in its own `<span>` and repaints only the rows
+whose contents changed, so an animation frame touches a handful of rows rather
+than rebuilding the whole grid.
+
 ## Moon algorithm
 
 Days since the known new moon of 2000-01-06 18:14 UTC, mod the synodic month

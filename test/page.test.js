@@ -66,6 +66,15 @@ test('main.js never uses innerHTML (CLAUDE.md hard constraint)', () => {
     assert.doesNotMatch(readFile('js/main.js'), /innerHTML/);
 });
 
+test('the idle animations honour prefers-reduced-motion', () => {
+    const src = readFile('js/main.js');
+    assert.match(src, /prefers-reduced-motion/,
+        'main.js starts timers, so it must check prefers-reduced-motion itself — ' +
+        'the CSS guard only covers the star twinkle');
+    // Timing and randomness must stay out of the pure scene module.
+    assert.doesNotMatch(readFile('js/scene.js'), /setTimeout|setInterval|requestAnimationFrame/);
+});
+
 test('index.html has no inline script or style (CSP: default-src \'self\')', () => {
     const html = readFile('index.html');
     // Every <script> must be external — an inline one is blocked outright by

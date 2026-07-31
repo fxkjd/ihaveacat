@@ -254,6 +254,133 @@ test('the fence is coloured as background, not as the cat', () => {
     assert.ok(posts > 10, 'expected many posts on the fence base row');
 });
 
+// ---- Idle animations ------------------------------------------------------
+
+test('the resting scene is unchanged by the animation feature', () => {
+    const opts = { cols: 140, rows: 50, moonRows: MoonPhase.renderMoonRows(4) };
+    const plain = Scene.sceneToText(Scene.buildScene(opts));
+    // No animation options, an explicit rest frame, and an absent meteor must
+    // all produce exactly the same page.
+    assert.equal(Scene.sceneToText(Scene.buildScene({ ...opts, tailFrame: 0 })), plain);
+    assert.equal(Scene.sceneToText(Scene.buildScene({ ...opts, meteor: null })), plain);
+    // Frame 0 must render the tail exactly as the static TAIL_PATCH does.
+    Scene.TAIL_PATCH.forEach((patch, r) => {
+        const frame = Scene.TAIL_WAG_FRAMES[0][r];
+        if (patch === null) {
+            assert.equal(frame, null, `frame 0 row ${r} should be null`);
+            return;
+        }
+        assert.equal(frame.slice(0, patch.length), patch, `frame 0 row ${r} diverges`);
+        assert.match(frame.slice(patch.length), /^ *$/, `frame 0 row ${r} pads with non-space`);
+    });
+});
+
+test('every wag frame stays inside the tail\'s five columns', () => {
+    Scene.TAIL_WAG_FRAMES.forEach((frame, f) => {
+        assert.equal(frame.length, Scene.TAIL_PATCH.length, `frame ${f} row count`);
+        frame.forEach((patch, r) => {
+            if (patch === null) return;
+            assert.ok(patch.length <= 5,
+                `frame ${f} row ${r} is ${patch.length} cols — it would erase a fence post`);
+        });
+        // Row 0 is the cat's rear, where the tail attaches: the body must not move.
+        assert.equal(frame[0], Scene.TAIL_WAG_FRAMES[0][0], `frame ${f} moved the cat's body`);
+    });
+});
+
+test('wagging never disturbs the fence posts flanking the tail', () => {
+    Scene.TAIL_WAG_FRAMES.forEach((_, f) => {
+        const scene = Scene.buildScene({ cols: 120, rows: 50, tailFrame: f });
+        const L = scene.layout;
+        for (let fr = 1; fr < Scene.FENCE_ROW_COUNT; fr++) {
+            const row = cellsOf(scene, L.fenceTop + fr);
+            [11, 17].forEach((post) => {
+                const cell = row[L.coreLeft + post];
+                assert.equal(cell.char, '|', `frame ${f} lost the post at col ${post}, row ${fr}`);
+                assert.equal(cell.cls, 'fence', `frame ${f} recoloured the post at col ${post}`);
+            });
+        }
+    });
+});
+
+test('the wagging tail stays the cat\'s colour, never the fence\'s', () => {
+    Scene.TAIL_WAG_FRAMES.forEach((frame, f) => {
+        const scene = Scene.buildScene({ cols: 120, rows: 50, tailFrame: f });
+        const L = scene.layout;
+        frame.forEach((patch, r) => {
+            if (patch === null) return;
+            for (let k = 0; k < patch.length; k++) {
+                if (patch.charAt(k) === ' ') continue;
+                const cell = cellsOf(scene, L.fenceTop + r)[L.coreLeft + Scene.TAIL_PATCH_COL + k];
+                assert.equal(cell.char, patch.charAt(k), `frame ${f} row ${r} col ${k}`);
+                assert.equal(cell.cls, null, `frame ${f} row ${r} col ${k} is not cat-coloured`);
+            }
+        });
+    });
+});
+
+test('the wag sequence starts and ends at rest', () => {
+    const seq = Scene.TAIL_WAG_SEQUENCE;
+    assert.ok(seq.length > 2, 'sequence too short to read as a wag');
+    assert.equal(seq[0], 0, 'wag must start from the resting pose');
+    assert.equal(seq[seq.length - 1], 0, 'wag must return to the resting pose');
+    seq.forEach((f) => {
+        assert.ok(f >= 0 && f < Scene.TAIL_WAG_FRAMES.length, `frame ${f} does not exist`);
+    });
+});
+
+test('meteorCells lays a fading trail back up-left from the head', () => {
+    const cells = Scene.meteorCells({ row: 20, col: 40 });
+    assert.equal(cells.length, Scene.METEOR_TRAIL.length);
+    assert.equal(cells[0].char, '*', 'the head should be the bright glyph');
+    cells.forEach((c, i) => {
+        // 1:1 diagonal, so every trail cell sits on the diagonal behind the head.
+        assert.equal(c.x, 40 - i, `cell ${i} off the diagonal`);
+        assert.equal(c.y, 20 - i, `cell ${i} off the diagonal`);
+        assert.equal(c.char, Scene.METEOR_TRAIL[i].char);
+        assert.equal(c.cls, Scene.METEOR_TRAIL[i].cls);
+    });
+    assert.deepEqual(Scene.meteorCells(null), [], 'no head means no meteor');
+});
+
+test('the meteor stays in the sky and passes behind the art', () => {
+    const moonRows = MoonPhase.renderMoonRows(4);
+    const probe = Scene.buildScene({ cols: 140, rows: 50, moonRows });
+    const L = probe.layout;
+    const before = Scene.sceneToCells(probe);
+    // Sweep the head right across the sky, including well past the edges.
+    for (let step = -10; step < L.fenceTop + 20; step++) {
+        const scene = Scene.buildScene({
+            cols: 140, rows: 50, moonRows, meteor: { row: step, col: step + 30 }
+        });
+        Scene.sceneToCells(scene).forEach((row, y) => {
+            row.forEach((cell, x) => {
+                if (cell.cls !== 'meteor' && cell.cls !== 'meteor-dim') return;
+                assert.ok(y < L.fenceTop, `meteor below the sky at ${x},${y}`);
+                // It may only claim blank sky or a background star — never art.
+                const was = (before[y] || [])[x];
+                const wasFree = !was || was.char === ' ' ||
+                    (was.cls && was.cls.indexOf('star') === 0);
+                assert.ok(wasFree, `meteor overwrote art at ${x},${y}`);
+            });
+        });
+    }
+});
+
+test('a meteor is deterministic and leaves no trace once gone', () => {
+    const opts = { cols: 140, rows: 50, moonRows: MoonPhase.renderMoonRows(2) };
+    const a = Scene.buildScene({ ...opts, meteor: { row: 12, col: 30 } });
+    const b = Scene.buildScene({ ...opts, meteor: { row: 12, col: 30 } });
+    assert.equal(Scene.sceneToText(a), Scene.sceneToText(b));
+    assert.notEqual(Scene.sceneToText(a), Scene.sceneToText(Scene.buildScene(opts)),
+        'a visible meteor should change the scene');
+    assert.equal(
+        Scene.sceneToText(Scene.buildScene({ ...opts, meteor: null })),
+        Scene.sceneToText(Scene.buildScene(opts)),
+        'clearing the meteor must restore the resting scene exactly'
+    );
+});
+
 // ---- Sizing math --------------------------------------------------------
 
 test('fitFontSize/fitGrid worked examples', () => {

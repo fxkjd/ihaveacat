@@ -70,6 +70,13 @@
     .vine {
 	color: #4f8a63;
     }
+    /* Shooting star: bright head, trail fading back into the sky. */
+    .meteor {
+	color: #ffffff;
+    }
+    .meteor-dim {
+	color: #9fb3c8;
+    }
     /*
      * Only ever takes effect when JS hasn't run: main.js sets an inline
      * font-size, which outranks any stylesheet rule.
