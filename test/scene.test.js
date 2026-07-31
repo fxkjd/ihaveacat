@@ -394,16 +394,31 @@ test('every meteor path draws a continuous, correctly angled streak', () => {
         const cells = Scene.meteorCells({ row: 40, col: 60, path: i });
         assert.equal(cells.length, Scene.METEOR_LENGTH, `path ${i} wrong length`);
         assert.equal(cells[0].char, '*', `path ${i} has no bright head`);
+        // One stroke glyph for the whole streak, from the path's overall
+        // slope. Choosing per cell produced a `- - \ - - \` staircase on any
+        // path that wasn't 45 degrees.
+        const ax = Math.abs(path.dx), ay = Math.abs(path.dy);
+        const stroke = ax > ay ? '-'
+            : (ax < ay ? '|' : ((path.dx > 0) === (path.dy > 0) ? '\\' : '/'));
+        let sawStroke = false, sawDot = false;
         for (let k = 1; k < cells.length; k++) {
             const dx = cells[k - 1].x - cells[k].x;
             const dy = cells[k - 1].y - cells[k].y;
             // Continuity: a gap would render as a dotted line, not a streak.
             assert.ok(Math.max(Math.abs(dx), Math.abs(dy)) === 1,
                 `path ${i} cell ${k} is not adjacent to its neighbour (${dx},${dy})`);
-            // The glyph must match the direction it was drawn in.
-            const want = dy === 0 ? '-' : (dx === 0 ? '|' : ((dx > 0) === (dy > 0) ? '\\' : '/'));
-            assert.equal(cells[k].char, want, `path ${i} cell ${k} glyph disagrees with its slope`);
+            assert.ok(cells[k].char === stroke || cells[k].char === '.',
+                `path ${i} cell ${k} is ${JSON.stringify(cells[k].char)}, ` +
+                `expected the stroke ${JSON.stringify(stroke)} or a fading dot`);
+            if (cells[k].char === stroke) {
+                sawStroke = true;
+                assert.ok(!sawDot, `path ${i} returns to a stroke after fading to dots`);
+            } else {
+                sawDot = true;
+            }
         }
+        assert.ok(sawStroke, `path ${i} drew no stroke at all`);
+        assert.ok(sawDot, `path ${i} never fades out`);
         // Deterministic, and travelling the way the path says.
         assert.deepEqual(Scene.meteorCells({ row: 40, col: 60, path: i }), cells);
         const back = cells[cells.length - 1];

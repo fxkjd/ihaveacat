@@ -90,17 +90,21 @@
      * rebuilt from scratch. Rows here are fence rows 1-3; fence row 0 is the
      * cat's rear (CAT_BASE_ART) and never moves, so the body stays still.
      *
-     * The curl mirrors on the left half of the swing so the tail bows the way
-     * it is travelling instead of keeping one lean throughout.
+     * Glyphs express SLOPE, not just position: `/` where the tail leans left,
+     * `\` where it leans right, `|` where it hangs straight, and the original
+     * curved parens at rest where it is relaxed. Drawing every pose with the
+     * same `( )` curves and only moving them made the tail look like it was
+     * teleporting rather than rotating. The tail is two parallel strokes two
+     * columns apart (it is outlined, like the cat), closed at the tip by `_`.
      */
     var TAIL_WAG_FRAMES = [
-        [{ col: 11, text: ') )' }, { col: 11, text: '( (' }, { col: 9, text: ')_)' }],
-        [{ col: 11, text: ') )' }, { col: 12, text: '( (' }, { col: 10, text: ')_)' }],
-        [{ col: 12, text: ') )' }, { col: 12, text: '( (' }, { col: 11, text: ')_)' }],
+        [{ col: 11, text: '/ /' }, { col: 10, text: '/ /' }, { col: 9, text: '/_/' }],
+        [{ col: 11, text: '/ /' }, { col: 11, text: '/ /' }, { col: 10, text: '/_/' }],
+        [{ col: 12, text: '( (' }, { col: 12, text: '| |' }, { col: 11, text: '(_)' }],
         [{ col: 12, text: '( (' }, { col: 13, text: ') )' }, { col: 12, text: '(_(' }],
-        [{ col: 12, text: '( (' }, { col: 14, text: ') )' }, { col: 13, text: '(_(' }],
-        [{ col: 13, text: '( (' }, { col: 14, text: ') )' }, { col: 14, text: '(_(' }],
-        [{ col: 13, text: '( (' }, { col: 15, text: ') )' }, { col: 15, text: '(_(' }]
+        [{ col: 12, text: '( (' }, { col: 13, text: '| |' }, { col: 13, text: '(_)' }],
+        [{ col: 12, text: '\\ \\' }, { col: 13, text: '\\ \\' }, { col: 14, text: '\\_\\' }],
+        [{ col: 13, text: '\\ \\' }, { col: 14, text: '\\ \\' }, { col: 15, text: '\\_\\' }]
     ];
     var TAIL_REST_FRAME = 3;
     // A full sweep: rest, out to the right, across to the left, back to rest.
@@ -123,6 +127,7 @@
     ];
     var METEOR_LENGTH = 9;       // cells, head included
     var METEOR_BRIGHT = 3;       // leading cells drawn bright, rest dimmed
+    var METEOR_FADE_AT = 5;      // from here back the trail thins to dots
 
     /*
      * Weathering. A few pickets sag or are missing so the fence reads as an
@@ -251,11 +256,18 @@
         return vineRawRows(post);
     }
 
-    // The glyph for a move of (dx, dy) between adjacent trail cells.
-    function streakGlyph(dx, dy) {
-        if (dy === 0) return '-';
-        if (dx === 0) return '|';
-        return (dx > 0) === (dy > 0) ? '\\' : '/';
+    /*
+     * One stroke glyph for the whole streak, taken from the path's OVERALL
+     * slope. Picking a glyph per cell from its local step looked chunky: on a
+     * shallow path most steps are horizontal but every few cells drops a row,
+     * so the trail came out `- - \ - - \` — a visible staircase. A single
+     * glyph reads as one clean streak at any slope.
+     */
+    function streakGlyph(path) {
+        var ax = Math.abs(path.dx), ay = Math.abs(path.dy);
+        if (ax > ay) return '-';
+        if (ax < ay) return '|';
+        return (path.dx > 0) === (path.dy > 0) ? '\\' : '/';
     }
 
     /*
@@ -274,20 +286,17 @@
         var steps = Math.max(Math.abs(path.dx), Math.abs(path.dy));
         var stepX = path.dx / steps;
         var stepY = path.dy / steps;
+        var stroke = streakGlyph(path);
         var cells = [];
-        var prevX = head.col;
-        var prevY = head.row;
         for (var i = 0; i < METEOR_LENGTH; i++) {
-            var x = Math.round(head.col - stepX * i);
-            var y = Math.round(head.row - stepY * i);
             cells.push({
-                x: x,
-                y: y,
-                char: i === 0 ? '*' : streakGlyph(prevX - x, prevY - y),
+                x: Math.round(head.col - stepX * i),
+                y: Math.round(head.row - stepY * i),
+                // Head, then the stroke, then dots: the tail thins to points
+                // rather than ending on a hard stroke.
+                char: i === 0 ? '*' : (i < METEOR_FADE_AT ? stroke : '.'),
                 cls: i < METEOR_BRIGHT ? 'meteor' : 'meteor-dim'
             });
-            prevX = x;
-            prevY = y;
         }
         return cells;
     }

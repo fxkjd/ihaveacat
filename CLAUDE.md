@@ -153,10 +153,19 @@ Rules these must keep:
   body must not move. Poses describe fence rows 1–3 only.
 - **The tail is a pendulum**: the attachment travels least and the tip most. A
   test pins that ordering, and that the sweep is symmetric about rest.
+- **Tail glyphs express slope, not just position** — `/` leaning left, `\`
+  leaning right, `|` hanging straight, and the original curved parens at rest.
+  Drawing every pose with the same `( )` curves and only moving them made the
+  tail look like it was teleporting rather than rotating. The tail is two
+  parallel strokes two columns apart (it is outlined, like the cat), closed at
+  the tip by `_`.
 - **Meteor trails are generated, not hand-authored.** `meteorCells` walks back
-  along the flight line one cell at a time on the dominant axis and picks each
-  glyph from its local direction (`\` `/` `-` `|`). Stepping by the raw `dx/dy`
-  would leave gaps on any path that isn't 45°.
+  along the flight line one cell at a time on the dominant axis; stepping by the
+  raw `dx/dy` would leave gaps on any path that isn't 45°. It uses **one stroke
+  glyph for the whole streak**, from the path's overall slope, then fades to
+  `.`. Choosing a glyph per cell from its local step looked chunky: on a shallow
+  path most steps are horizontal but every few cells drops a row, so the trail
+  came out `- - \ - - \` — a visible staircase.
 - **A meteor dies on contact with the cat**, tested against the cat's *bounding
   box* rather than its glyphs. The cat is an outline — most of its box is blank
   — so a glyph-only test let the streak draw straight through its body. That was
