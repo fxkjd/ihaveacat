@@ -78,6 +78,58 @@
     var TAIL_PATCH_IS_CAT = [true, true, true, true, false, false];
 
     /*
+     * Tail wag: a pendulum. The tail hangs from the cat's rear, so the
+     * attachment barely moves while the tip travels furthest — each pose
+     * gives every row its own column. Pose index 3 is rest and reproduces
+     * the original art exactly; poses run left (0) through right (6).
+     *
+     * The tail is blitted opaquely AFTER the fence, so its cells — including
+     * its own blanks — erase whatever fence or vine sits under them. That is
+     * deliberate: the tail passes in front of the fence, and the posts it
+     * covers reappear on their own as it swings away, because every frame is
+     * rebuilt from scratch. Rows here are fence rows 1-3; fence row 0 is the
+     * cat's rear (CAT_BASE_ART) and never moves, so the body stays still.
+     *
+     * Glyphs express SLOPE, not just position: `/` where the tail leans left,
+     * `\` where it leans right, `|` where it hangs straight, and the original
+     * curved parens at rest where it is relaxed. Drawing every pose with the
+     * same `( )` curves and only moving them made the tail look like it was
+     * teleporting rather than rotating. The tail is two parallel strokes two
+     * columns apart (it is outlined, like the cat), closed at the tip by `_`.
+     */
+    var TAIL_WAG_FRAMES = [
+        [{ col: 11, text: '/ /' }, { col: 10, text: '/ /' }, { col: 9, text: '/_/' }],
+        [{ col: 11, text: '/ /' }, { col: 11, text: '/ /' }, { col: 10, text: '/_/' }],
+        [{ col: 12, text: '( (' }, { col: 12, text: '| |' }, { col: 11, text: '(_)' }],
+        [{ col: 12, text: '( (' }, { col: 13, text: ') )' }, { col: 12, text: '(_(' }],
+        [{ col: 12, text: '( (' }, { col: 13, text: '| |' }, { col: 13, text: '(_)' }],
+        [{ col: 12, text: '\\ \\' }, { col: 13, text: '\\ \\' }, { col: 14, text: '\\_\\' }],
+        [{ col: 13, text: '\\ \\' }, { col: 14, text: '\\ \\' }, { col: 15, text: '\\_\\' }]
+    ];
+    var TAIL_REST_FRAME = 3;
+    // A full sweep: rest, out to the right, across to the left, back to rest.
+    var TAIL_WAG_SEQUENCE = [3, 4, 5, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3];
+
+    /*
+     * Shooting star. Seven directions, picked at random by the caller, so
+     * meteors do not all fly the same diagonal. dx/dy is the per-step motion;
+     * the trail is generated back along that line (see meteorCells), which is
+     * what keeps it continuous and correctly angled at any slope.
+     */
+    var METEOR_PATHS = [
+        { dx: 1, dy: 1 },    // 45 degrees, down-right
+        { dx: -1, dy: 1 },   // 45 degrees, down-left
+        { dx: 2, dy: 1 },    // shallow, down-right
+        { dx: -2, dy: 1 },   // shallow, down-left
+        { dx: 3, dy: 1 },    // very shallow, down-right
+        { dx: -3, dy: 1 },   // very shallow, down-left
+        { dx: 1, dy: 2 }     // steep, down-right
+    ];
+    var METEOR_LENGTH = 9;       // cells, head included
+    var METEOR_BRIGHT = 3;       // leading cells drawn bright, rest dimmed
+    var METEOR_FADE_AT = 5;      // from here back the trail thins to dots
+
+    /*
      * Weathering. A few pickets sag or are missing so the fence reads as an
      * old garden fence rather than a printed band. Keyed on core-relative
      * picket columns via hash2, so it is identical on every load and does not
@@ -204,6 +256,71 @@
         return vineRawRows(post);
     }
 
+    /*
+     * One stroke glyph for the whole streak, taken from the path's OVERALL
+     * slope. Picking a glyph per cell from its local step looked chunky: on a
+     * shallow path most steps are horizontal but every few cells drops a row,
+     * so the trail came out `- - \ - - \` — a visible staircase. A single
+     * glyph reads as one clean streak at any slope.
+     */
+    function streakGlyph(path) {
+        var ax = Math.abs(path.dx), ay = Math.abs(path.dy);
+        if (ax > ay) return '-';
+        if (ax < ay) return '|';
+        return (path.dx > 0) === (path.dy > 0) ? '\\' : '/';
+    }
+
+    /*
+     * The cells a shooting star occupies, head first. The trail is walked back
+     * along the flight line one cell at a time on the dominant axis, so it is
+     * continuous whatever the slope — stepping by the raw dx/dy would leave
+     * gaps on any path shallower or steeper than 45 degrees. Each glyph comes
+     * from its own local direction, so the streak stays correctly angled.
+     *
+     * The head may sit off-grid, so a streak enters and leaves the viewport
+     * naturally; callers clip. Pure: the caller owns where and when it flies.
+     */
+    function meteorCells(head) {
+        if (!head) return [];
+        var path = METEOR_PATHS[head.path || 0] || METEOR_PATHS[0];
+        var steps = Math.max(Math.abs(path.dx), Math.abs(path.dy));
+        var stepX = path.dx / steps;
+        var stepY = path.dy / steps;
+        var stroke = streakGlyph(path);
+        var cells = [];
+        for (var i = 0; i < METEOR_LENGTH; i++) {
+            cells.push({
+                x: Math.round(head.col - stepX * i),
+                y: Math.round(head.row - stepY * i),
+                // Head, then the stroke, then dots: the tail thins to points
+                // rather than ending on a hard stroke.
+                char: i === 0 ? '*' : (i < METEOR_FADE_AT ? stroke : '.'),
+                cls: i < METEOR_BRIGHT ? 'meteor' : 'meteor-dim'
+            });
+        }
+        return cells;
+    }
+
+    /*
+     * Is a meteor still flying? It dies on contact with the cat — using the
+     * cat's BOUNDING BOX, not its glyphs: the cat is an outline, so most of
+     * its box is blank and a glyph-only test lets the streak show straight
+     * through its body. The fence needs no test here; cells at or below the
+     * horizon are clipped per-cell, so a meteor slides behind it gracefully
+     * instead of popping out of existence.
+     */
+    function meteorAlive(head, L) {
+        if (!head || !L) return false;
+        var box = L.catBox;
+        return !(head.col >= box.left && head.col <= box.right &&
+                 head.row >= box.top && head.row <= box.bottom);
+    }
+
+    // The tail pose for a wag frame; out-of-range indices fall back to rest.
+    function tailPose(frame) {
+        return TAIL_WAG_FRAMES[frame] || TAIL_WAG_FRAMES[TAIL_REST_FRAME];
+    }
+
     // The weathered fence as actually drawn in the scene (no tail patch).
     function fenceSceneChar(row, c) {
         var state = picketState(picketPost(c));
@@ -245,14 +362,14 @@
     var CAT_BASE_WIDTH = CAT_ART[CAT_ART.length - 1].length;
     /*
      * The cat's hindquarters rest ON the rail row: in the original art the
-     * rail's own glyphs at core cols 10-11 double as the cat's back leg
-     * continuing down and its underside. Together with the tail patch at
-     * cols 12-16 they spell "\__  _/" — the cat's rear. They belong to the
-     * cat, not the fence, so they are drawn in the cat's colour; treating
-     * them as rail deletes part of the cat's body.
+     * rail's own glyphs there double as the cat's back leg continuing down
+     * and its underside, spelling "\__  _/". They belong to the cat, not the
+     * fence, so they are drawn in the cat's colour; treating them as rail
+     * deletes part of the cat's body. This is the whole of fence row 0 under
+     * the cat, and it never animates — the tail hangs from it.
      */
     var CAT_BASE_COL = 10;
-    var CAT_BASE_ART = '\\_';
+    var CAT_BASE_ART = '\\__  _/';
 
     /*
      * Viewport-fitting math. Every rounding goes DOWN (fontPx to 2dp,
@@ -449,17 +566,13 @@
         // erase the post underneath rather than letting it show through.
         for (var fr = 0; fr < FENCE_ROW_COUNT; fr++) {
             var fy = L.fenceTop + fr;
-            var patch = TAIL_PATCH[fr];
             for (x = 0; x < cols; x++) {
                 var cc = x - L.coreLeft;
-                var inPatch = patch && cc >= TAIL_PATCH_COL &&
-                    cc < TAIL_PATCH_COL + patch.length;
                 // The cat stands in front of the fence, so the rail is
                 // occluded across its base. Without this the rail's peaks
                 // butt into the cat's leg tips and the legs look like they
-                // turn brown.
-                if (fr === 0 && !inPatch &&
-                    cc >= CAT_COL && cc < CAT_COL + CAT_BASE_WIDTH) {
+                // turn brown. Row 0 is the cat's rear — it never animates.
+                if (fr === 0 && cc >= CAT_COL && cc < CAT_COL + CAT_BASE_WIDTH) {
                     var baseOff = cc - CAT_BASE_COL;
                     if (baseOff >= 0 && baseOff < CAT_BASE_ART.length) {
                         set(x, fy, CAT_BASE_ART.charAt(baseOff), null);
@@ -468,14 +581,7 @@
                     }
                     continue;
                 }
-                if (inPatch) {
-                    // The tail itself belongs to the cat, so it keeps the
-                    // cat's colour rather than receding with the fence.
-                    set(x, fy, patch.charAt(cc - TAIL_PATCH_COL),
-                        TAIL_PATCH_IS_CAT[fr] ? null : 'fence');
-                } else {
-                    set(x, fy, fenceSceneChar(fr, cc), 'fence');
-                }
+                set(x, fy, fenceSceneChar(fr, cc), 'fence');
             }
         }
 
@@ -501,6 +607,41 @@
                     set(vx, L.fenceTop + vrow, vg, 'vine');
                 }
             }
+        }
+
+        /*
+         * The tail, drawn in FRONT of the fence and the vines and blitted
+         * opaquely, so it erases whatever it covers — including fence posts,
+         * which reappear by themselves as it swings away. Rows here are fence
+         * rows 1-3; row 0 is the cat's rear, drawn above and never animated.
+         */
+        var pose = tailPose(opts.tailFrame === undefined || opts.tailFrame === null
+            ? TAIL_REST_FRAME : opts.tailFrame);
+        pose.forEach(function (sprite, i) {
+            var ty = L.fenceTop + 1 + i;
+            for (var k = 0; k < sprite.text.length; k++) {
+                set(L.coreLeft + sprite.col + k, ty, sprite.text.charAt(k), null);
+            }
+        });
+
+        // Shooting star: drawn last so it can see what is already there, and
+        // only where the sky is genuinely free.
+        if (opts.meteor && meteorAlive(opts.meteor, L)) {
+            var catBox = L.catBox;
+            meteorCells(opts.meteor).forEach(function (c) {
+                if (c.x < 0 || c.x >= cols || c.y < 0 || c.y >= rows) return;
+                if (c.y >= L.fenceTop) return;                  // behind the horizon
+                // Test the cat's BOX, not its glyphs: the cat is an outline,
+                // so most of its box is blank and a glyph-only test lets the
+                // streak show straight through the cat's body.
+                if (c.x >= catBox.left && c.x <= catBox.right &&
+                    c.y >= catBox.top && c.y <= catBox.bottom) return;
+                var cell = grid[c.y][c.x];
+                var freeSky = cell.char === ' ' ||
+                    (cell.cls && cell.cls.indexOf('star') === 0);
+                if (!freeSky) return;
+                set(c.x, c.y, c.char, c.cls);
+            });
         }
 
         return { cols: cols, rows: rows, layout: L, grid: grid.map(toRuns) };
@@ -567,6 +708,11 @@
         CAT_BASE_COL: CAT_BASE_COL,
         CAT_BASE_ART: CAT_BASE_ART,
         TAIL_PATCH_IS_CAT: TAIL_PATCH_IS_CAT,
+        TAIL_WAG_FRAMES: TAIL_WAG_FRAMES,
+        TAIL_WAG_SEQUENCE: TAIL_WAG_SEQUENCE,
+        TAIL_REST_FRAME: TAIL_REST_FRAME,
+        METEOR_PATHS: METEOR_PATHS,
+        METEOR_LENGTH: METEOR_LENGTH,
 
         hash2: hash2,
         fenceChar: fenceChar,
@@ -575,6 +721,9 @@
         picketPost: picketPost,
         picketState: picketState,
         vineRows: vineRows,
+        tailPose: tailPose,
+        meteorCells: meteorCells,
+        meteorAlive: meteorAlive,
         fenceRowText: fenceRowText,
         layout: layout,
         fitFontSize: fitFontSize,
