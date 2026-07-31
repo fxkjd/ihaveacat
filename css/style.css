@@ -20,31 +20,29 @@
 	bottom: 0;
 	text-align: center;
     }
+    /*
+     * The monospace stack is unconditional: both the generated scene and the
+     * static no-JS art are character-grid ASCII. It must never be left to the
+     * UA default — Firefox resolves that to the internal value `-moz-fixed`,
+     * which main.js cannot copy onto its measuring probe, so the grid would be
+     * measured against a proportional font.
+     *
+     * Ligatures/kerning are killed because a user's default monospace could be
+     * a coding font that ligates `/\`, `=\`, `--`, `===`, which would silently
+     * break the character grid the scene math depends on.
+     *
+     * main.js sets display/margin (and font-size/line-height) inline when it
+     * takes over; inline styles outrank these, so the rules below are the
+     * no-JS fallback's layout.
+     */
     pre {
     	display: inline-block;
 	text-align: left;
-    }
-    /*
-     * Once js/main.js takes over it rebuilds this into a full-bleed grid
-     * with an explicit monospace stack (the fallback above has none, and
-     * inherits the UA default). Ligatures/kerning are killed because a
-     * user's default monospace could be a coding font that ligates
-     * `/\`, `=\`, `--`, `===` — which would silently break the character
-     * grid the scene math depends on.
-     */
-    html.js div {
-	left: 0;
-	text-align: left;
-    }
-    html.js pre {
-	display: block;
-	margin: 0;
 	white-space: pre;
 	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace;
 	font-variant-ligatures: none;
 	font-feature-settings: "liga" 0, "clig" 0, "calt" 0;
 	font-kerning: none;
-	/* font-size and line-height are set inline by main.js */
     }
     .collar {
     	color: #C00000;
@@ -72,8 +70,12 @@
     .vine {
 	color: #4f8a63;
     }
+    /*
+     * Only ever takes effect when JS hasn't run: main.js sets an inline
+     * font-size, which outranks any stylesheet rule.
+     */
     @media (max-width: 480px) {
-	html:not(.js) pre {
+	pre {
 	    font-size: 2.8vw;
 	}
     }

@@ -70,9 +70,27 @@
         pre.appendChild(frag);
     }
 
+    /*
+     * Switch the fallback's centred inline-block layout to the full-bleed grid.
+     * Done from script rather than a CSS class because setting that class
+     * needed an inline <script>, which a `default-src 'self'` CSP blocks.
+     * Writing properties through CSSOM is not inline style in the CSP sense,
+     * so it is allowed.
+     */
+    function claimLayout() {
+        pre.style.display = 'block';
+        pre.style.margin = '0';
+        var wrap = pre.parentNode;
+        if (wrap && wrap.style) {
+            wrap.style.left = '0';
+            wrap.style.textAlign = 'left';
+        }
+    }
+
     function render() {
         var vp = viewport();
         if (!(vp.w > 0 && vp.h > 0)) return;
+        claimLayout();
 
         var f = Scene.fitFontSize(vp.w, vp.h, ratioW);
         var charW, grid, tries = 0;
