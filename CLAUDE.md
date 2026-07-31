@@ -23,6 +23,17 @@ stars and the ground with a lawn to use whatever space is left.
 - Pure HTML + vanilla JS. **Zero dependencies**, runtime and tests.
 - No build step, no dev server, no ES modules — classic scripts only, so the
   page works opened directly from the filesystem.
+- **No inline `<script>`, `<style>`, `style=` attributes or `on*` handlers in
+  `index.html`.** The live site serves
+  `Content-Security-Policy: default-src 'self'`, which blocks all of them
+  outright — and silently, so whatever they set up simply never happens.
+  Anything the page needs at load time goes in an external script, or is applied
+  by `main.js` through CSSOM (`el.style.x = …`, which CSP does allow). A test
+  enforces this.
+- The `<pre>` must always declare an explicit monospace family. Left to the UA
+  default, Firefox resolves it to the internal value `-moz-fixed`, which
+  `main.js` cannot copy onto its measuring probe — the probe then silently
+  measures a proportional font and the whole character grid is mis-sized.
 - Art fidelity: the cat, star glyphs, and fence pattern stay exactly as in the
   original art; the moon keeps its silhouette and its M/8/& + `moon-1/2/3`
   color-band style.
@@ -103,12 +114,12 @@ stars and the ground with a lawn to use whatever space is left.
   plain unweathered pattern so `FENCE_ART` — and therefore the no-JS fallback in
   `index.html` — is unaffected; `fenceSceneChar` is the weathered one the scene
   actually draws.
-- `css/style.css` — original site styling plus the full-bleed responsive rules
-  (`html.js` scope), an explicit monospace stack with ligatures/kerning
-  disabled (a coding font's default ligatures for `/\`, `=\`, `===` would
-  silently break the character grid), and the `.lawn`/star-variant classes.
-  The pre-JS fallback styling (`html:not(.js)`) keeps today's mobile
-  `2.8vw` behavior unchanged.
+- `css/style.css` — original site styling plus an explicit monospace stack with
+  ligatures/kerning disabled (a coding font's default ligatures for `/\`, `=\`,
+  `===` would silently break the character grid), and the `.fence`/`.lawn`/
+  `.vine`/star-variant classes. The `pre` rules are the no-JS fallback's layout
+  (centred inline-block, and `2.8vw` under 480px); `main.js` overrides them with
+  inline styles when it takes over.
 - `favicon.ico` — original site asset, unchanged.
 
 ## Moon algorithm

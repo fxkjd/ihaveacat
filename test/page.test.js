@@ -66,6 +66,36 @@ test('main.js never uses innerHTML (CLAUDE.md hard constraint)', () => {
     assert.doesNotMatch(readFile('js/main.js'), /innerHTML/);
 });
 
+test('index.html has no inline script or style (CSP: default-src \'self\')', () => {
+    const html = readFile('index.html');
+    // Every <script> must be external — an inline one is blocked outright by
+    // the site's CSP, and whatever it was setting up silently never happens.
+    [...html.matchAll(/<script\b([^>]*)>/g)].forEach((m) => {
+        assert.match(m[1], /\ssrc=/, `inline <script> found: <script${m[1]}>`);
+    });
+    assert.doesNotMatch(html, /<style\b/, 'inline <style> is blocked by the CSP');
+    assert.doesNotMatch(html, /\sstyle=/, 'style="" attributes are blocked by the CSP');
+    // Inline event handlers are inline script too.
+    assert.doesNotMatch(html, /\son[a-z]+\s*=/i, 'inline event handler is blocked by the CSP');
+});
+
+test('the pre carries an explicit monospace stack unconditionally', () => {
+    const css = readFile('css/style.css');
+    const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    const preRules = [...stripped.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+        .filter((m) => m[1].trim() === 'pre')
+        .map((m) => m[2]);
+    assert.ok(preRules.length, 'no bare `pre` rule found in css/style.css');
+    assert.ok(
+        preRules.some((body) => /font-family:[^;]*monospace/.test(body)),
+        'a bare `pre` rule must set a monospace family — leaving it to the UA ' +
+        'default resolves to -moz-fixed in Firefox, which main.js cannot copy ' +
+        'onto its measuring probe'
+    );
+    // The stack must not be gated behind a class that needs an inline script.
+    assert.doesNotMatch(css, /html\.js\b/, 'html.js gating requires an inline script (CSP)');
+});
+
 test('every class the scene can emit is styled in css/style.css', () => {
     const css = readFile('css/style.css');
     const defined = new Set([...css.matchAll(/\.([A-Za-z][-\w]*)/g)].map((m) => m[1]));
