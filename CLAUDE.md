@@ -126,13 +126,12 @@ stars and the ground with a lawn to use whatever space is left.
 
 Two timed animations, both driven from `js/main.js`:
 
-- **Tail wag** — every 5–10 s, a short burst through `Scene.TAIL_WAG_SEQUENCE`
-  at ~110 ms per frame, then back to rest.
-- **Shooting star** — every 20–30 s, a head plus long fading trail on a 1:1
-  diagonal, stepping down-right one cell per ~40 ms. It enters from above the
-  top edge and exits past the bottom of the sky, so it is never seen popping in
-  or out. It only claims blank sky or a background star, which is what makes it
-  pass *behind* the moon and cat instead of punching through them.
+- **Tail wag** — every 5–10 s, a full sweep through `Scene.TAIL_WAG_SEQUENCE`
+  at ~180 ms per frame (rest → right → left → rest, ~2.3 s), then back to rest.
+- **Shooting star** — every 20–30 s. One of seven `Scene.METEOR_PATHS` is picked
+  at random, so meteors vary in slope and direction. It enters above the top
+  edge and exits past the bottom of the sky, so it is never seen popping in or
+  out.
 
 Rules these must keep:
 
@@ -142,13 +141,27 @@ Rules these must keep:
   `scene.js`.
 - **`buildScene` with no animation options must render exactly the resting
   page.** Pinned by a test, so the feature cannot drift the static scene.
-- **Every wag frame must fit the tail's five columns** (`TAIL_PATCH_COL`..+4).
-  The patch is blitted opaquely, so a glyph straying outside would erase a fence
-  post for that frame and make the posts blink as the tail moves. The rest pose
-  sits flush against the left edge, so the wag sweeps rightward only; a
-  symmetric wag would need a wider patch, which would permanently delete a post.
-- **Frame 0 is the resting pose and row 0 never changes** — row 0 is the cat's
-  rear, where the tail attaches, and the body must not move.
+- **The tail is drawn in front of the fence and erases what it covers.** Each
+  pose gives every row its own column, and the sprite is blitted opaquely
+  *after* the fence and vines — so fence posts under the tail disappear while
+  covered and come back on their own as it swings away (every frame is rebuilt
+  from scratch). This is deliberate: an earlier version boxed the tail into five
+  columns to protect the posts, which limited it to a tiny rightward-only
+  twitch.
+- **`TAIL_REST_FRAME` is the resting pose and fence row 0 never animates** —
+  row 0 is the cat's rear (`CAT_BASE_ART`), where the tail attaches, and the
+  body must not move. Poses describe fence rows 1–3 only.
+- **The tail is a pendulum**: the attachment travels least and the tip most. A
+  test pins that ordering, and that the sweep is symmetric about rest.
+- **Meteor trails are generated, not hand-authored.** `meteorCells` walks back
+  along the flight line one cell at a time on the dominant axis and picks each
+  glyph from its local direction (`\` `/` `-` `|`). Stepping by the raw `dx/dy`
+  would leave gaps on any path that isn't 45°.
+- **A meteor dies on contact with the cat**, tested against the cat's *bounding
+  box* rather than its glyphs. The cat is an outline — most of its box is blank
+  — so a glyph-only test let the streak draw straight through its body. That was
+  a real bug. The fence needs no such test: cells at or below the horizon are
+  clipped per-cell, so a meteor slides behind it instead of popping out.
 - Both animations are skipped under `prefers-reduced-motion`, matching the CSS
   guard that already disables the star twinkle.
 
