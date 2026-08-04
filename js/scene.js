@@ -111,23 +111,23 @@
     var TAIL_WAG_SEQUENCE = [3, 4, 5, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3];
 
     /*
-     * Shooting star. Seven directions, picked at random by the caller, so
-     * meteors do not all fly the same diagonal. dx/dy is the per-step motion;
-     * the trail is generated back along that line (see meteorCells), which is
-     * what keeps it continuous and correctly angled at any slope.
+     * Shooting star. The cell diagonal only, left and right.
+     *
+     * OWNER DECISION: no other slopes. `\` and `/` run corner to corner, so on
+     * a one-column-per-row diagonal each glyph touches the next and the streak
+     * is a single unbroken line. Nothing else in ASCII does that. Shallower
+     * slopes were drawn with `-` and with the baseline glyphs `` ` `` `-` `.`,
+     * steeper ones with `|`; both were tried at length and both read as a
+     * staircase or a ladder of detached marks rather than a streak.
      */
     var METEOR_PATHS = [
-        { dx: 1, dy: 1 },    // 45 degrees, down-right
-        { dx: -1, dy: 1 },   // 45 degrees, down-left
-        { dx: 2, dy: 1 },    // shallow, down-right
-        { dx: -2, dy: 1 },   // shallow, down-left
-        { dx: 3, dy: 1 },    // very shallow, down-right
-        { dx: -3, dy: 1 },   // very shallow, down-left
-        { dx: 1, dy: 2 }     // steep, down-right
+        { dx: 1, dy: 1 },     // down-right
+        { dx: -1, dy: 1 }     // down-left
     ];
     var METEOR_LENGTH = 9;       // cells, head included
-    var METEOR_BRIGHT = 3;       // leading cells drawn bright, rest dimmed
-    var METEOR_FADE_AT = 5;      // from here back the trail thins to dots
+    // Character width over line height. Used only to pace the flight, so its
+    // speed reads the same whatever the character cell's shape.
+    var CELL_ASPECT = 0.5;
 
     /*
      * Weathering. A few pickets sag or are missing so the fence reads as an
@@ -256,64 +256,80 @@
         return vineRawRows(post);
     }
 
-    /*
-     * One stroke glyph for the whole streak, taken from the path's OVERALL
-     * slope. Picking a glyph per cell from its local step looked chunky: on a
-     * shallow path most steps are horizontal but every few cells drops a row,
-     * so the trail came out `- - \ - - \` — a visible staircase. A single
-     * glyph reads as one clean streak at any slope.
-     */
-    function streakGlyph(path) {
-        var ax = Math.abs(path.dx), ay = Math.abs(path.dy);
-        if (ax > ay) return '-';
-        if (ax < ay) return '|';
+    // The stroke for a streak: the cell diagonal, leaning the way it flies.
+    function meteorGlyph(path) {
         return (path.dx > 0) === (path.dy > 0) ? '\\' : '/';
     }
 
     /*
-     * The cells a shooting star occupies, head first. The trail is walked back
-     * along the flight line one cell at a time on the dominant axis, so it is
-     * continuous whatever the slope — stepping by the raw dx/dy would leave
-     * gaps on any path shallower or steeper than 45 degrees. Each glyph comes
-     * from its own local direction, so the streak stays correctly angled.
+     * A path's flight geometry: the per-step motion, the streak's length, and
+     * how much ground one step covers. `step` is in cell HEIGHTS, so main.js
+     * can pace every flight to the same apparent speed rather than the same
+     * cells per second — a cell is about twice as tall as it is wide.
+     */
+    function meteorGeometry(pathIndex) {
+        var path = METEOR_PATHS[pathIndex] || METEOR_PATHS[0];
+        var steps = Math.max(Math.abs(path.dx), Math.abs(path.dy));
+        var sx = path.dx / steps, sy = path.dy / steps;
+        return {
+            path: path, sx: sx, sy: sy, len: METEOR_LENGTH,
+            step: Math.sqrt(sx * sx * CELL_ASPECT * CELL_ASPECT + sy * sy)
+        };
+    }
+
+    /*
+     * The cells a shooting star occupies, head first, walked back along the
+     * flight line one cell at a time.
      *
      * The head may sit off-grid, so a streak enters and leaves the viewport
      * naturally; callers clip. Pure: the caller owns where and when it flies.
      */
     function meteorCells(head) {
         if (!head) return [];
-        var path = METEOR_PATHS[head.path || 0] || METEOR_PATHS[0];
-        var steps = Math.max(Math.abs(path.dx), Math.abs(path.dy));
-        var stepX = path.dx / steps;
-        var stepY = path.dy / steps;
-        var stroke = streakGlyph(path);
+        var g = meteorGeometry(head.path || 0);
+        var stroke = meteorGlyph(g.path);
+        var bright = Math.round(g.len / 3);
+        var fadeAt = Math.round(g.len * 5 / 9);
         var cells = [];
-        for (var i = 0; i < METEOR_LENGTH; i++) {
+        for (var i = 0; i < g.len; i++) {
             cells.push({
-                x: Math.round(head.col - stepX * i),
-                y: Math.round(head.row - stepY * i),
+                x: Math.round(head.col - g.sx * i),
+                y: Math.round(head.row - g.sy * i),
                 // Head, then the stroke, then dots: the tail thins to points
                 // rather than ending on a hard stroke.
-                char: i === 0 ? '*' : (i < METEOR_FADE_AT ? stroke : '.'),
-                cls: i < METEOR_BRIGHT ? 'meteor' : 'meteor-dim'
+                char: i === 0 ? '*' : (i < fadeAt ? stroke : '.'),
+                cls: i < bright ? 'meteor' : 'meteor-dim'
             });
         }
         return cells;
     }
 
     /*
-     * Is a meteor still flying? It dies on contact with the cat — using the
-     * cat's BOUNDING BOX, not its glyphs: the cat is an outline, so most of
-     * its box is blank and a glyph-only test lets the streak show straight
-     * through its body. The fence needs no test here; cells at or below the
-     * horizon are clipped per-cell, so a meteor slides behind it gracefully
-     * instead of popping out of existence.
+     * Is a meteor still flying? It dies on contact with the cat or the moon.
+     *
+     * Both by BOUNDING BOX, not by glyph. For the cat that is essential — it is
+     * an outline, so most of its box is blank and a glyph-only test let the
+     * streak show straight through its body. For the moon it is what makes the
+     * streak vanish cleanly: drawing it across the disc looked wrong, and
+     * merely hiding the cells that overlap left the head swallowed and a stub
+     * of trail hanging in the sky behind it.
+     *
+     * The fence needs no test here; cells at or below the horizon are clipped
+     * per-cell, so a meteor slides behind it gracefully instead of popping out.
      */
     function meteorAlive(head, L) {
         if (!head || !L) return false;
-        var box = L.catBox;
-        return !(head.col >= box.left && head.col <= box.right &&
-                 head.row >= box.top && head.row <= box.bottom);
+        // Round first: the head flies on fractional rows but is DRAWN in a
+        // whole cell, and testing the fraction let a head at row 14.6 count as
+        // clear of a box starting at 15 while its glyph landed inside it and
+        // was clipped — the head vanished and left the trail behind it.
+        var col = Math.round(head.col), row = Math.round(head.row);
+        return !inBox(col, row, L.catBox) && !inBox(col, row, L.moonBox);
+    }
+
+    function inBox(col, row, box) {
+        return !!box && col >= box.left && col <= box.right &&
+            row >= box.top && row <= box.bottom;
     }
 
     // The tail pose for a wag frame; out-of-range indices fall back to rest.
@@ -637,6 +653,10 @@
                 if (c.x >= catBox.left && c.x <= catBox.right &&
                     c.y >= catBox.top && c.y <= catBox.bottom) return;
                 var cell = grid[c.y][c.x];
+                // Only genuinely free sky, and a star it may overwrite. Never
+                // the moon: a streak drawn across the disc looked wrong. The
+                // flight ends before it can get there anyway — meteorAlive
+                // kills it on the moon's box — so this only guards the trail.
                 var freeSky = cell.char === ' ' ||
                     (cell.cls && cell.cls.indexOf('star') === 0);
                 if (!freeSky) return;
@@ -713,6 +733,7 @@
         TAIL_REST_FRAME: TAIL_REST_FRAME,
         METEOR_PATHS: METEOR_PATHS,
         METEOR_LENGTH: METEOR_LENGTH,
+        CELL_ASPECT: CELL_ASPECT,
 
         hash2: hash2,
         fenceChar: fenceChar,
@@ -722,6 +743,8 @@
         picketState: picketState,
         vineRows: vineRows,
         tailPose: tailPose,
+        meteorGlyph: meteorGlyph,
+        meteorGeometry: meteorGeometry,
         meteorCells: meteorCells,
         meteorAlive: meteorAlive,
         fenceRowText: fenceRowText,

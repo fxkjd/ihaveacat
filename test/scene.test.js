@@ -383,48 +383,167 @@ test('meteorAlive kills a streak on contact with the cat', () => {
     assert.equal(Scene.meteorAlive(null, L), false);
 });
 
-test('every meteor path draws a continuous, correctly angled streak', () => {
-    assert.ok(Scene.METEOR_PATHS.length >= 6, 'want at least six paths to choose between');
+test('meteors fly the cell diagonal and nothing else', () => {
+    // Owner decision, and the reason is fixed: `\` and `/` run corner to
+    // corner, so on a one-column-per-row diagonal each glyph touches the next.
+    // Every other slope has to be drawn with `-`, `|` or the baseline glyphs,
+    // none of which join across a row, and all of them read as a staircase or
+    // a ladder of detached marks. Both were tried and both were rejected.
     const dirs = new Set(Scene.METEOR_PATHS.map((p) => p.dx + ':' + p.dy));
     assert.equal(dirs.size, Scene.METEOR_PATHS.length, 'duplicate paths add no variety');
     assert.ok(Scene.METEOR_PATHS.some((p) => p.dx > 0), 'no rightward path');
     assert.ok(Scene.METEOR_PATHS.some((p) => p.dx < 0), 'no leftward path');
 
     Scene.METEOR_PATHS.forEach((path, i) => {
+        assert.equal(Math.abs(path.dx), Math.abs(path.dy),
+            `path ${i} (${path.dx},${path.dy}) is not the cell diagonal`);
+        assert.ok(dirs.has(-path.dx + ':' + path.dy),
+            `path ${i} has no mirror — meteors would favour one direction`);
+        assert.ok(Scene.meteorCells({ row: 40, col: 60, path: i })
+            .every((c) => '*\\/.'.includes(c.char)),
+            `path ${i} draws a glyph other than the head, a diagonal, or a fading dot`);
+    });
+});
+
+test('every meteor streak is one connected line, never a staircase', () => {
+    // Ink heights within the cell: ` and ' ride the top, - the middle, . the
+    // baseline. Along the direction of travel the ink must descend on every
+    // step, which is what makes a shallow streak read as a line. A flat run of
+    // `---` or `...` on one row — the old staircase — repeats a height and
+    // fails here.
+    const INK = { '`': 0, '\'': 0, '-': 1, '.': 2 };
+
+    Scene.METEOR_PATHS.forEach((path, i) => {
         const cells = Scene.meteorCells({ row: 40, col: 60, path: i });
-        assert.equal(cells.length, Scene.METEOR_LENGTH, `path ${i} wrong length`);
+        const g = Scene.meteorGeometry(i);
+        assert.equal(cells.length, g.len, `path ${i} wrong length`);
         assert.equal(cells[0].char, '*', `path ${i} has no bright head`);
-        // One stroke glyph for the whole streak, from the path's overall
-        // slope. Choosing per cell produced a `- - \ - - \` staircase on any
-        // path that wasn't 45 degrees.
-        const ax = Math.abs(path.dx), ay = Math.abs(path.dy);
-        const stroke = ax > ay ? '-'
-            : (ax < ay ? '|' : ((path.dx > 0) === (path.dy > 0) ? '\\' : '/'));
-        let sawStroke = false, sawDot = false;
-        for (let k = 1; k < cells.length; k++) {
-            const dx = cells[k - 1].x - cells[k].x;
-            const dy = cells[k - 1].y - cells[k].y;
-            // Continuity: a gap would render as a dotted line, not a streak.
-            assert.ok(Math.max(Math.abs(dx), Math.abs(dy)) === 1,
-                `path ${i} cell ${k} is not adjacent to its neighbour (${dx},${dy})`);
-            assert.ok(cells[k].char === stroke || cells[k].char === '.',
-                `path ${i} cell ${k} is ${JSON.stringify(cells[k].char)}, ` +
-                `expected the stroke ${JSON.stringify(stroke)} or a fading dot`);
-            if (cells[k].char === stroke) {
-                sawStroke = true;
-                assert.ok(!sawDot, `path ${i} returns to a stroke after fading to dots`);
-            } else {
-                sawDot = true;
+
+        // Sweep the head across a whole cell. A flying head is almost never on
+        // a whole row, and checking only row 40 checked the one phase that
+        // cannot fail: at offset 0 the cells land at -1/3, 0, +1/3, which even
+        // a badly-sized set of bands sorts correctly. Every other phase went
+        // untested, and half of them were drawing `--` and `--.` flat runs.
+        for (let frac = 0; frac < 1; frac += 0.02) {
+            const swept = Scene.meteorCells({ row: 40 + frac, col: 60, path: i });
+            const at = `path ${i} at row offset +${frac.toFixed(2)}`;
+            assert.equal(swept.length, g.len, `${at}: wrong length`);
+
+            for (let k = 1; k < swept.length; k++) {
+                const dx = swept[k - 1].x - swept[k].x;
+                const dy = swept[k - 1].y - swept[k].y;
+                // Continuity: a gap would render as a dotted line, not a streak.
+                assert.ok(Math.max(Math.abs(dx), Math.abs(dy)) === 1,
+                    `${at}: cell ${k} is not adjacent to its neighbour (${dx},${dy})`);
+                assert.ok(swept[k].char in INK || '\\/|'.includes(swept[k].char),
+                    `${at}: cell ${k} is ${JSON.stringify(swept[k].char)}, not a streak glyph`);
             }
+
+            // Group by row and read each row along the way the meteor travels.
+            const rows = new Map();
+            swept.forEach((c) => {
+                if (!rows.has(c.y)) rows.set(c.y, []);
+                rows.get(c.y).push(c);
+            });
+            rows.forEach((row) => {
+                const along = row.slice().sort((a, b) => (path.dx > 0 ? a.x - b.x : b.x - a.x));
+                for (let k = 1; k < along.length; k++) {
+                    if (along[k - 1].char === '*' || along[k].char === '*') continue;
+                    assert.ok(INK[along[k].char] > INK[along[k - 1].char],
+                        `${at}: a row draws ` +
+                        `${JSON.stringify(along.map((c) => c.char).join(''))} along the flight — ` +
+                        'a flat run reads as a staircase, not a streak');
+                }
+            });
         }
-        assert.ok(sawStroke, `path ${i} drew no stroke at all`);
-        assert.ok(sawDot, `path ${i} never fades out`);
+
+        // Every streak the same apparent length, whatever its slope: a shallow
+        // path covers less ground per cell, so a fixed cell count stubbed it.
+        const visual = g.len * g.step;
+        const want = Scene.METEOR_LENGTH * Math.sqrt(Scene.CELL_ASPECT ** 2 + 1);
+        assert.ok(Math.abs(visual - want) / want < 0.2,
+            `path ${i} is ${visual.toFixed(1)} cell-heights long, want about ${want.toFixed(1)}`);
+
         // Deterministic, and travelling the way the path says.
         assert.deepEqual(Scene.meteorCells({ row: 40, col: 60, path: i }), cells);
         const back = cells[cells.length - 1];
         assert.equal(Math.sign(60 - back.x), Math.sign(path.dx), `path ${i} trails the wrong way`);
     });
     assert.deepEqual(Scene.meteorCells(null), [], 'no head means no meteor');
+});
+
+test('a meteor disappears at the moon rather than drawing across it', () => {
+    // Drawing the streak over the disc looked wrong, and merely hiding the
+    // overlapping cells was worse: the head vanished and left a stub of trail
+    // hanging behind it. The whole meteor goes instead, the way it already
+    // does on the cat.
+    const opts = { cols: 140, rows: 50, moonRows: MoonPhase.renderMoonRows(4) };
+    const L = Scene.buildScene(opts).layout;
+    const resting = Scene.sceneToCells(Scene.buildScene(opts));
+
+    const moon = [];
+    resting.forEach((row, y) => row.forEach((cell, x) => {
+        if (cell.cls && cell.cls.indexOf('moon') === 0) moon.push({ x, y });
+    }));
+    assert.ok(moon.length > 20, 'no moon to test against');
+
+    moon.forEach(({ x, y }) => {
+        assert.equal(Scene.meteorAlive({ row: y, col: x, path: 0 }, L), false,
+            `a meteor is still alive on the moon at ${x},${y}`);
+    });
+    // Well clear of the disc it flies on as normal.
+    assert.equal(Scene.meteorAlive({ row: L.moonBox.top - 4, col: L.moonBox.left - 4, path: 0 }, L),
+        true, 'the moon is killing meteors that never reach it');
+
+    // The head flies on fractional rows but is drawn in a whole cell, so the
+    // kill test has to round the way the renderer does. Judging the fraction
+    // let a head just outside a box draw its glyph just inside it, where it was
+    // clipped — leaving the trail on screen with nothing at its head.
+    assert.equal(Scene.meteorAlive({ row: L.moonBox.top - 0.4, col: L.moonBox.left + 3, path: 0 }, L),
+        false, 'a head whose drawn cell lands on the moon must be dead');
+    assert.equal(Scene.meteorAlive({ row: L.catBox.top - 0.4, col: L.catBox.left + 3, path: 0 }, L),
+        false, 'a head whose drawn cell lands on the cat must be dead');
+
+    // And nothing is ever painted onto a moon cell, whatever the head is doing.
+    for (let step = -12; step < L.fenceTop; step++) {
+        Scene.METEOR_PATHS.forEach((_, path) => {
+            const head = { row: step, col: L.moonBox.left + 3, path };
+            Scene.sceneToCells(Scene.buildScene({ ...opts, meteor: head }))
+                .forEach((row, y) => row.forEach((cell, x) => {
+                    if (!String(cell.cls).startsWith('meteor')) return;
+                    const under = resting[y] && resting[y][x];
+                    assert.ok(!(under && under.cls && under.cls.indexOf('moon') === 0),
+                        `meteor drawn over the moon at ${x},${y}`);
+                }));
+        });
+    }
+});
+
+test('a meteor flying on a fractional row resolves sub-cell steps', () => {
+    // main.js flies the head on fractional rows and must not round it. The
+    // glyphs carry three ink heights per cell, so a third of a row of travel
+    // is a visible step; rounding the head threw that away and dropped the
+    // whole trail a row at once, which read as a lurch rather than a glide.
+    Scene.METEOR_PATHS.forEach((path, i) => {
+        const seen = new Set();
+        [0, 0.34, 0.67].forEach((frac) => {
+            const cells = Scene.meteorCells({ row: 20 + frac, col: 60, path: i });
+            assert.equal(cells.length, Scene.meteorGeometry(i).len,
+                `path ${i} changes length at row offset ${frac}`);
+            for (let k = 1; k < cells.length; k++) {
+                const dx = cells[k - 1].x - cells[k].x;
+                const dy = cells[k - 1].y - cells[k].y;
+                assert.ok(Math.max(Math.abs(dx), Math.abs(dy)) === 1,
+                    `path ${i} breaks apart at row offset ${frac}`);
+            }
+            seen.add(cells.map((c) => c.char + ':' + c.x + ':' + c.y).join('|'));
+        });
+        // The diagonal steps a whole row per cell, so all of its cells cross a
+        // row boundary together and it can only resolve two of the three.
+        const want = Math.abs(path.dx) === Math.abs(path.dy) ? 2 : 3;
+        assert.equal(seen.size, want,
+            `path ${i} resolves ${seen.size} steps across a row of travel, want ${want}`);
+    });
 });
 
 test('an off-grid meteor clips instead of throwing', () => {
