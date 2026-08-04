@@ -64,7 +64,9 @@ All of the above are enforced by tests.
   frame clock, because the other suites only test the pure module and read
   `main.js` as text. Its clock deliberately starts at a large, page-load-relative
   value: a meteor loop that assumed the clock starts at zero passed every other
-  test while the live page showed no shooting stars at all.
+  test while the live page showed no shooting stars at all. The harness can
+  also resize the window and flip `prefers-reduced-motion` mid-run, and can pin
+  `Math.random` so a test can aim a flight exactly.
 
 Both traps above were the same testing mistake: **asserting only at the tidy
 value**. A flying meteor is never on a whole row and a frame clock never starts
@@ -131,8 +133,6 @@ Rules:
 - The tail is a **pendulum** (attachment travels least, tip most) and its glyphs
   express **slope**: `/`, `\`, `|`, and the curved parens at rest. Using the same
   curves at every pose made it look like it was teleporting rather than rotating.
-- Meteor trails are generated: `meteorCells` walks back along the flight line one
-  cell at a time. Stepping by raw `dx/dy` would leave gaps.
 - **The cell diagonal is the only slope, and this is settled.** `\` and `/` run
   corner to corner, so on a one-column-per-row diagonal every glyph touches the
   next and the streak is a single unbroken line. Nothing else in ASCII joins up:
@@ -145,10 +145,8 @@ Rules:
   together. That is the floor on how smooth an ASCII meteor gets. It is not a
   defect awaiting cleverer glyphs — the cleverer glyphs were the staircase.
 - The tail thins to `.` behind the stroke, so it does not end on a hard edge.
-- **`METEOR_SPEED` is in cell-heights per second along the flight path**, using
-  `CELL_ASPECT` because a cell is about twice as tall as it is wide. That makes
-  the streak read at one speed whatever the font's cell shape — roughly one
-  cell-height per frame at 60 Hz. It is the only speed knob.
+- **`METEOR_CELLS_PER_SEC` is the only speed knob** — grid cells per second
+  along the flight, roughly one cell per frame at 60 Hz.
 - **The flight runs on `requestAnimationFrame`, positioned from elapsed time.**
   Never a frame count on a timer: `setTimeout` lands between refreshes, so each
   step was held for one, two or three of them in an uneven pattern and every
@@ -164,6 +162,12 @@ Rules:
   from elapsed time; `meteorCells` and `meteorAlive` round it. Keep the flying
   position fractional and the rounding at the edges — rounding early quantises
   the *timing* as well as the drawing, which is what made it stumble.
+- **`runMeteor` re-derives the layout every frame** instead of reusing its
+  launch copy — only the aim comes from launch. `buildScene` always draws with
+  the current grid, so judging the flight against the launch layout let a
+  mid-flight resize move the moon into the path: the streak vanished crossing
+  the disc's new position, then re-emerged below it and flew on through the
+  very thing it is supposed to die against.
 - **A meteor dies on contact with the cat's or the moon's bounding box** — both
   by box, never by glyph. The cat is an outline, so most of its box is blank and
   a glyph test let streaks draw straight through its body. The moon needs it for
@@ -175,7 +179,13 @@ Rules:
   glyph just inside it and get clipped.
 - Meteors overwrite stars and nothing else. The fence needs no test — cells at
   or below the horizon are clipped, so meteors slide behind it.
-- Both are skipped under `prefers-reduced-motion`, matching the CSS twinkle guard.
+- Both honour `prefers-reduced-motion` **live**, matching the CSS twinkle guard
+  (a media query, so the stars stop the instant the OS setting flips — sampling
+  it once at load left the JS animations running until reload). `motionGen` is
+  a generation counter: every flip bumps it, every timer/rAF chain carries the
+  generation it started with and dies silently on mismatch. That stops running
+  chains without keeping handles to them, and makes restarts idempotent — a
+  timer still pending from before the flip cannot revive a second chain.
 
 ## Determinism
 

@@ -21,6 +21,14 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const ROOT = path.join(__dirname, '..');
+const Scene = require('../js/scene.js');
+
+// The grid main.js will derive for a viewport, given the harness's fixed
+// 0.6em character width (see getBoundingClientRect below).
+function gridFor(w, h) {
+    const f = Scene.fitFontSize(w, h, 0.6);
+    return Scene.fitGrid(w, h, 0.6 * f.fontPx, f.lineHeightPx);
+}
 
 function element(tag) {
     return {
@@ -72,12 +80,20 @@ function loadPage(options) {
     const frameQueue = [];
     const timers = [];
     const errors = [];
+    const listeners = {};           // window event listeners, by type
+    // The reduced-motion media query, stateful so a test can flip it live.
+    const media = { matches: !!opts.reducedMotion, handlers: [] };
 
     const win = {
         requestAnimationFrame(cb) { return frameQueue.push(cb); },
         setTimeout(fn, ms) { return timers.push({ fn, at: now + ms }); },
-        addEventListener() {},
-        matchMedia() { return { matches: !!opts.reducedMotion }; },
+        addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
+        matchMedia() {
+            return {
+                get matches() { return media.matches; },
+                addEventListener(type, fn) { if (type === 'change') media.handlers.push(fn); }
+            };
+        },
         getComputedStyle() { return { fontFamily: 'monospace' }; },
         document: {
             getElementById(id) { return id === 'scene' ? pre : null; },
@@ -92,6 +108,9 @@ function loadPage(options) {
     win.window = win;
 
     const ctx = vm.createContext(win);
+    // Pin the context's Math.random before the scripts load — main.js draws
+    // from it during startup, and a deterministic flight lets a test aim it.
+    if (opts.random) vm.runInContext('Math', ctx).random = opts.random;
     ['js/moon.js', 'js/scene.js', 'js/main.js'].forEach((rel) => {
         vm.runInContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), ctx, { filename: rel });
     });
@@ -119,8 +138,38 @@ function loadPage(options) {
                 (row.children || []).forEach((run) => { if (run.className) out.add(run.className); });
             });
             return out;
+        },
+        // The full text of the <pre>, for change detection.
+        text() {
+            return pre.children.map((row) =>
+                (row.children || []).map((c) => c.textContent || c.nodeValue || '').join('')
+            ).join('\n');
+        },
+        // A window resize: new viewport dimensions, then the resize event.
+        resize(w, h) {
+            win.document.documentElement.clientWidth = w;
+            win.document.documentElement.clientHeight = h;
+            (listeners.resize || []).forEach((fn) => {
+                try { fn(); } catch (e) { errors.push(e); }
+            });
+        },
+        // Flip the OS reduced-motion setting mid-session.
+        setReducedMotion(on) {
+            media.matches = on;
+            media.handlers.forEach((fn) => {
+                try { fn(); } catch (e) { errors.push(e); }
+            });
         }
     };
+}
+
+// Ticks until the first meteor cell is painted; throws if none ever is.
+function tickUntilMeteor(page) {
+    for (let t = 0; t < 4000; t++) {
+        page.tick();
+        if ([...page.paintedClasses()].some((c) => c.indexOf('meteor') === 0)) return;
+    }
+    assert.fail('no meteor ever appeared');
 }
 
 // Runs page time until `wanted` flights have finished, or `seconds` runs out.
@@ -176,4 +225,94 @@ test('prefers-reduced-motion stops the flight before it starts', () => {
     const { flights } = fly(page, 45);
     assert.deepEqual(page.errors, []);
     assert.equal(flights.length, 0, 'meteors flew despite prefers-reduced-motion');
+});
+
+test('a mid-flight resize cannot tunnel the meteor through the moon', () => {
+    // Regression: runMeteor judged the whole flight against the layout it
+    // captured at launch, while buildScene draws with the current one. A
+    // resize that moved the moon into the flight line made the streak vanish
+    // crossing the disc's new position, then RE-EMERGE below it and fly on —
+    // through the very thing it is supposed to die against.
+    // 0.9 pins path {-1,1} and aims the flight through the sky's right half —
+    // with Math.random pinned, the whole line is exactly predictable.
+    const RAND = 0.9;
+    const page = loadPage({ random: () => RAND });
+    const g0 = gridFor(1400, 900);
+    const L0 = Scene.layout(g0.cols, g0.rows);
+    const aimRow = Math.round(L0.fenceTop * (0.25 + RAND * 0.5));
+    const aimCol = Math.round(g0.cols * (0.2 + RAND * 0.6));
+    const lineCol = (r) => aimCol - (r - aimRow);
+    const inB = (r, c, b) => c >= b.left && c <= b.right && r >= b.top && r <= b.bottom;
+
+    // The un-resized flight must be clear of the original moon and cat all the
+    // way to the horizon — otherwise it dies on its own and the resize proves
+    // nothing. (0.5, for instance, aims straight into the moon.)
+    for (let r = 0; r < L0.fenceTop; r++) {
+        assert.ok(!inB(r, lineCol(r), L0.moonBox) && !inB(r, lineCol(r), L0.catBox),
+            `the launch line hits the original scene at row ${r} — pick another RAND`);
+    }
+
+    // Find a resize that drops the fresh moon onto the remaining flight line,
+    // with the head still on-grid and open sky below the disc for a tunnelling
+    // streak to re-emerge into (so the buggy behaviour would be visible).
+    let target = null;
+    for (let w = 700; w <= 1400 && !target; w += 50) {
+        for (let h = 450; h <= 900 && !target; h += 50) {
+            const g = gridFor(w, h);
+            const Lf = Scene.layout(g.cols, g.rows);
+            const hit = [];
+            for (let r = Math.max(6, Lf.moonBox.top); r <= Lf.moonBox.bottom; r++) {
+                if (inB(r, lineCol(r), Lf.moonBox)) hit.push(r);
+            }
+            if (!hit.length) continue;
+            // A tunnelled streak must have somewhere visible to re-emerge.
+            const below = hit[hit.length - 1] + 2;
+            if (below >= Lf.fenceTop - 2 || lineCol(below) < 3 ||
+                lineCol(below) >= g.cols - 3 || inB(below, lineCol(below), Lf.catBox)) continue;
+            target = { w, h };
+        }
+    }
+    assert.ok(target, 'no resize target found — widen the search bounds');
+
+    tickUntilMeteor(page);
+    page.resize(target.w, target.h);
+
+    // Watch the rest of the flight: once the streak has been seen and then
+    // disappears, it must never come back.
+    let sawInk = false, gapAfterInk = false;
+    for (let i = 0; i < 900; i++) {
+        page.tick();
+        const ink = [...page.paintedClasses()].some((c) => c.indexOf('meteor') === 0);
+        if (ink && gapAfterInk) {
+            assert.fail('the streak re-emerged after vanishing — it tunnelled through the moon');
+        }
+        if (ink) sawInk = true;
+        else if (sawInk) gapAfterInk = true;
+    }
+    assert.deepEqual(page.errors, []);
+    assert.ok(sawInk, 'the flight never showed after the resize — the scenario proves nothing');
+});
+
+test('flipping prefers-reduced-motion mid-session stops and restarts the animations', () => {
+    // Regression: the setting was sampled once at load, so flipping it stopped
+    // the CSS twinkle instantly but left the wag and meteors running.
+    const page = loadPage({ random: () => 0.5 });
+    tickUntilMeteor(page);
+
+    page.setReducedMotion(true);
+    page.tick();                    // the already-queued frame dies on the bumped generation
+    page.tick();
+    assert.ok(![...page.paintedClasses()].some((c) => c.indexOf('meteor') === 0),
+        'the streak survived the flip to reduced motion');
+
+    // Nothing may move while reduced: the DOM stays byte-identical for 40 s,
+    // across both the pending wag timer and the pending meteor reschedule.
+    const still = page.text();
+    for (let i = 0; i < 2400; i++) page.tick();
+    assert.equal(page.text(), still, 'something kept animating under prefers-reduced-motion');
+
+    // Flip back off: the animations must return on their own.
+    page.setReducedMotion(false);
+    tickUntilMeteor(page);
+    assert.deepEqual(page.errors, []);
 });

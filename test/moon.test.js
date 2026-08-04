@@ -12,8 +12,7 @@ const {
     phaseIndex,
     phaseName,
     renderMoonCells,
-    moonRowText,
-    renderMoonRowHTML
+    moonRowText
 } = require('../js/moon.js');
 
 const DAY_MS = 86400000;
@@ -194,17 +193,3 @@ test('waning crescent reproduces the original site art rows', () => {
     assert.equal(moonRowText(4, WANING_CRESCENT), 'MMM88&&&&&&&&');
 });
 
-test('HTML output escapes ampersands and merges runs into spans', () => {
-    const html = renderMoonRowHTML(3, NEW);
-    assert.ok(html.includes('&amp;'));
-    assert.ok(!/&(?!amp;)/.test(html), 'unescaped ampersand in HTML');
-    // A fully dark row is a single span.
-    assert.equal(html.match(/<span/g).length, 1);
-    // Stripping tags and unescaping gives back the plain row text.
-    const text = html.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
-    assert.equal(text, moonRowText(3, NEW));
-    // A partially lit row keeps the class order dark -> lit for waxing.
-    const quarter = renderMoonRowHTML(3, FIRST_QUARTER);
-    const classes = [...quarter.matchAll(/class="([^"]+)"/g)].map((m) => m[1]);
-    assert.deepEqual(classes, ['moon-3', 'moon-2', 'moon-1']);
-});

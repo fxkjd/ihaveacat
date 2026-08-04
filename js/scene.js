@@ -125,9 +125,8 @@
         { dx: -1, dy: 1 }     // down-left
     ];
     var METEOR_LENGTH = 9;       // cells, head included
-    // Character width over line height. Used only to pace the flight, so its
-    // speed reads the same whatever the character cell's shape.
-    var CELL_ASPECT = 0.5;
+    var METEOR_BRIGHT = 3;       // leading cells drawn bright, rest dimmed
+    var METEOR_FADE_AT = 5;      // from here back the trail thins to dots
 
     /*
      * Weathering. A few pickets sag or are missing so the fence reads as an
@@ -256,49 +255,30 @@
         return vineRawRows(post);
     }
 
-    // The stroke for a streak: the cell diagonal, leaning the way it flies.
-    function meteorGlyph(path) {
-        return (path.dx > 0) === (path.dy > 0) ? '\\' : '/';
-    }
-
-    /*
-     * A path's flight geometry: the per-step motion, the streak's length, and
-     * how much ground one step covers. `step` is in cell HEIGHTS, so main.js
-     * can pace every flight to the same apparent speed rather than the same
-     * cells per second — a cell is about twice as tall as it is wide.
-     */
-    function meteorGeometry(pathIndex) {
-        var path = METEOR_PATHS[pathIndex] || METEOR_PATHS[0];
-        var steps = Math.max(Math.abs(path.dx), Math.abs(path.dy));
-        var sx = path.dx / steps, sy = path.dy / steps;
-        return {
-            path: path, sx: sx, sy: sy, len: METEOR_LENGTH,
-            step: Math.sqrt(sx * sx * CELL_ASPECT * CELL_ASPECT + sy * sy)
-        };
-    }
-
     /*
      * The cells a shooting star occupies, head first, walked back along the
      * flight line one cell at a time.
      *
-     * The head may sit off-grid, so a streak enters and leaves the viewport
-     * naturally; callers clip. Pure: the caller owns where and when it flies.
+     * The head arrives on fractional coordinates (main.js positions it from
+     * elapsed time) and is rounded ONCE, here: the streak is exactly the
+     * rounded head's streak, never anything in between. It may sit off-grid,
+     * so a streak enters and leaves the viewport naturally; callers clip.
+     * Pure: the caller owns where and when it flies.
      */
     function meteorCells(head) {
         if (!head) return [];
-        var g = meteorGeometry(head.path || 0);
-        var stroke = meteorGlyph(g.path);
-        var bright = Math.round(g.len / 3);
-        var fadeAt = Math.round(g.len * 5 / 9);
+        var path = METEOR_PATHS[head.path || 0] || METEOR_PATHS[0];
+        var stroke = path.dx > 0 ? '\\' : '/';
+        var col = Math.round(head.col), row = Math.round(head.row);
         var cells = [];
-        for (var i = 0; i < g.len; i++) {
+        for (var i = 0; i < METEOR_LENGTH; i++) {
             cells.push({
-                x: Math.round(head.col - g.sx * i),
-                y: Math.round(head.row - g.sy * i),
+                x: col - path.dx * i,
+                y: row - path.dy * i,
                 // Head, then the stroke, then dots: the tail thins to points
                 // rather than ending on a hard stroke.
-                char: i === 0 ? '*' : (i < fadeAt ? stroke : '.'),
-                cls: i < bright ? 'meteor' : 'meteor-dim'
+                char: i === 0 ? '*' : (i < METEOR_FADE_AT ? stroke : '.'),
+                cls: i < METEOR_BRIGHT ? 'meteor' : 'meteor-dim'
             });
         }
         return cells;
@@ -643,15 +623,13 @@
         // Shooting star: drawn last so it can see what is already there, and
         // only where the sky is genuinely free.
         if (opts.meteor && meteorAlive(opts.meteor, L)) {
-            var catBox = L.catBox;
             meteorCells(opts.meteor).forEach(function (c) {
                 if (c.x < 0 || c.x >= cols || c.y < 0 || c.y >= rows) return;
                 if (c.y >= L.fenceTop) return;                  // behind the horizon
                 // Test the cat's BOX, not its glyphs: the cat is an outline,
                 // so most of its box is blank and a glyph-only test lets the
                 // streak show straight through the cat's body.
-                if (c.x >= catBox.left && c.x <= catBox.right &&
-                    c.y >= catBox.top && c.y <= catBox.bottom) return;
+                if (inBox(c.x, c.y, L.catBox)) return;
                 var cell = grid[c.y][c.x];
                 // Only genuinely free sky, and a star it may overwrite. Never
                 // the moon: a streak drawn across the disc looked wrong. The
@@ -733,7 +711,6 @@
         TAIL_REST_FRAME: TAIL_REST_FRAME,
         METEOR_PATHS: METEOR_PATHS,
         METEOR_LENGTH: METEOR_LENGTH,
-        CELL_ASPECT: CELL_ASPECT,
 
         hash2: hash2,
         fenceChar: fenceChar,
@@ -743,8 +720,6 @@
         picketState: picketState,
         vineRows: vineRows,
         tailPose: tailPose,
-        meteorGlyph: meteorGlyph,
-        meteorGeometry: meteorGeometry,
         meteorCells: meteorCells,
         meteorAlive: meteorAlive,
         fenceRowText: fenceRowText,
