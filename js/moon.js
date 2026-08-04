@@ -113,31 +113,6 @@
         });
     }
 
-    function escapeHTML(text) {
-        return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-
-    // One row as HTML: consecutive same-class cells merged into one span.
-    function renderMoonRowHTML(rowIndex, phase) {
-        var cells = renderMoonCells(phase)[rowIndex];
-        var html = '';
-        var run = '';
-        var runCls = null;
-        function flush() {
-            if (run) html += '<span class="' + runCls + '">' + escapeHTML(run) + '</span>';
-            run = '';
-        }
-        cells.forEach(function (cell) {
-            if (cell.cls !== runCls) {
-                flush();
-                runCls = cell.cls;
-            }
-            run += cell.char;
-        });
-        flush();
-        return html;
-    }
-
     var MoonPhase = {
         SYNODIC_MONTH_DAYS: SYNODIC_MONTH_DAYS,
         NEW_MOON_EPOCH_MS: NEW_MOON_EPOCH_MS,
@@ -150,7 +125,6 @@
         phaseName: phaseName,
         renderMoonCells: renderMoonCells,
         moonRowText: moonRowText,
-        renderMoonRowHTML: renderMoonRowHTML,
         renderMoonRows: renderMoonRows
     };
 
