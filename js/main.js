@@ -39,12 +39,37 @@
 
     var ratioW = measureCharWidth(REF_FONT_PX) / REF_FONT_PX;
 
-    // Computed once at load: a re-render triggered by a mid-session resize
-    // must not change which phase of the moon is showing.
-    var phase = MoonPhase.phaseIndex(new Date());
-    var moonRows = MoonPhase.renderMoonRows(phase);
+    // One instant for the whole visit, taken at load: a re-render triggered
+    // by a mid-session resize must not change the moon's phase or turn the
+    // sky. Refreshing the page is how time advances here.
+    var loadedAt = new Date();
+    var moonRows = MoonPhase.renderMoonRows(MoonPhase.phaseIndex(loadedAt));
 
     var last = { cols: -1, rows: -1 };
+
+    /*
+     * The real sky, when js/sky.js is present; otherwise skyStars stays null
+     * and scene.js falls back to its seeded stars — the page degrades, never
+     * breaks. The vantage point comes from the URL hash fragment
+     * (#lat=..&lon=..&dir=n|s|e|w), Barcelona looking south by default; the
+     * DATE is never configurable, per the no-?date= owner rule.
+     */
+    var hasSky = typeof SkyMap !== 'undefined';
+    var skyView = hasSky ? SkyMap.parseView(
+        typeof location === 'object' && location ? location.hash : '') : null;
+    var skyStars = null;
+
+    function computeStars() {
+        if (!hasSky || !(last.cols > 0)) return;
+        skyStars = SkyMap.starCells({
+            date: loadedAt,
+            lat: skyView.lat,
+            lon: skyView.lon,
+            azimuth: skyView.azimuth,
+            cols: last.cols,
+            skyRows: Scene.layout(last.cols, last.rows).fenceTop
+        });
+    }
 
     function viewport() {
         var d = document.documentElement;
@@ -148,6 +173,9 @@
         if (grid.cols === last.cols && grid.rows === last.rows) return;
         last = grid;
 
+        // Same frozen instant, new window: the sky is recomputed so a wider
+        // grid reveals more of it at the edges without moving what is shown.
+        computeStars();
         paint(buildFrame());
     }
 
@@ -187,6 +215,7 @@
             cols: last.cols,
             rows: last.rows,
             moonRows: moonRows,
+            stars: skyStars,
             tailFrame: anim.tailFrame,
             meteor: anim.meteor
         });
@@ -323,6 +352,15 @@
     startAnimations();
     addEventListener('resize', onResize);
     addEventListener('orientationchange', render);
+    // Retune the vantage point live when the hash is edited — no reload, and
+    // the frozen load instant is kept: only WHERE you look changes, not WHEN.
+    addEventListener('hashchange', function () {
+        if (!hasSky) return;
+        skyView = SkyMap.parseView(
+            typeof location === 'object' && location ? location.hash : '');
+        computeStars();
+        redraw();
+    });
     if (document.fonts && document.fonts.ready) {
         document.fonts.ready.then(render, function () {});
     }

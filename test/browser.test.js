@@ -87,6 +87,7 @@ function loadPage(options) {
     const win = {
         requestAnimationFrame(cb) { return frameQueue.push(cb); },
         setTimeout(fn, ms) { return timers.push({ fn, at: now + ms }); },
+        location: { hash: opts.hash || '' },
         addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
         matchMedia() {
             return {
@@ -111,7 +112,8 @@ function loadPage(options) {
     // Pin the context's Math.random before the scripts load — main.js draws
     // from it during startup, and a deterministic flight lets a test aim it.
     if (opts.random) vm.runInContext('Math', ctx).random = opts.random;
-    ['js/moon.js', 'js/scene.js', 'js/main.js'].forEach((rel) => {
+    ['js/moon.js', 'js/sky.js', 'js/scene.js', 'js/main.js'].forEach((rel) => {
+        if (opts.withoutSky && rel === 'js/sky.js') return;
         vm.runInContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), ctx, { filename: rel });
     });
 
@@ -157,6 +159,13 @@ function loadPage(options) {
         setReducedMotion(on) {
             media.matches = on;
             media.handlers.forEach((fn) => {
+                try { fn(); } catch (e) { errors.push(e); }
+            });
+        },
+        // Edit the URL hash and fire hashchange, as the address bar would.
+        setHash(hash) {
+            win.location.hash = hash;
+            (listeners.hashchange || []).forEach((fn) => {
                 try { fn(); } catch (e) { errors.push(e); }
             });
         }
@@ -291,6 +300,48 @@ test('a mid-flight resize cannot tunnel the meteor through the moon', () => {
     }
     assert.deepEqual(page.errors, []);
     assert.ok(sawInk, 'the flight never showed after the resize — the scenario proves nothing');
+});
+
+test('the page shows the real sky, retuned live by the URL hash', () => {
+    // Sky text above the fence for comparison across vantage points.
+    const skyText = (page) => page.text().split('\n').slice(0, 25).join('\n');
+
+    const bcn = loadPage();
+    bcn.tick();
+    assert.deepEqual(bcn.errors, []);
+    assert.ok([...bcn.paintedClasses()].some((c) => c.indexOf('star') === 0),
+        'no stars painted at all');
+
+    // A different vantage point in the hash yields a different sky at the
+    // same instant (Sydney looking north shares no sky with Barcelona south).
+    const syd = loadPage({ hash: '#lat=-33.87&lon=151.21&dir=n' });
+    syd.tick();
+    assert.deepEqual(syd.errors, []);
+    assert.notEqual(skyText(syd), skyText(bcn),
+        'the hash vantage point changed nothing');
+
+    // Editing the hash retunes the view without a reload...
+    const before = skyText(bcn);
+    bcn.setHash('#dir=e');
+    bcn.tick();
+    assert.notEqual(skyText(bcn), before, 'hashchange did not repaint the sky');
+    // ...and a garbage hash falls back to the default view, not a blank sky.
+    bcn.setHash('#lat=abc&dir=up');
+    bcn.tick();
+    assert.equal(skyText(bcn), before, 'garbage hash should mean the default view');
+    assert.deepEqual(bcn.errors, []);
+});
+
+test('without js/sky.js the page falls back to the seeded stars', () => {
+    const page = loadPage({ withoutSky: true });
+    page.tick();
+    assert.deepEqual(page.errors, []);
+    assert.ok([...page.paintedClasses()].some((c) => c.indexOf('star') === 0),
+        'the fallback stars are missing');
+    // The hash is meaningless without the sky module — and harmless.
+    page.setHash('#lat=10');
+    page.tick();
+    assert.deepEqual(page.errors, []);
 });
 
 test('flipping prefers-reduced-motion mid-session stops and restarts the animations', () => {

@@ -31,7 +31,10 @@ shows instead.
 - **Art fidelity**: the cat, star glyphs and fence pattern stay as in the
   original art; the moon keeps its silhouette and `moon-1/2/3` bands.
 - **The static art in `index.html` is the no-JS fallback** — don't remove it.
-- Owner decisions: no `?date=`/`?phase=` URL params, no phase-name label.
+- Owner decisions: no `?date=`/`?phase=` URL params, no phase-name label —
+  **time is never configurable**. The sky's *vantage point* is, via the URL
+  hash fragment: `#lat=<float>&lon=<float>&dir=<n|s|e|w>` (the fragment stays
+  out of server logs and CDN cache keys, and retunes live on `hashchange`).
 
 All of the above are enforced by tests.
 
@@ -39,6 +42,15 @@ All of the above are enforced by tests.
 
 - `js/moon.js` — phase math and moon cell generation. Pure, DOM-free, UMD-lite
   (`window.MoonPhase` / `module.exports`).
+- `js/sky.js` — the real night sky. A vendored star catalog (HYG v4.1,
+  CC BY-SA 4.0; 1,637 stars to magnitude 5.0, whole sphere, brightest-first)
+  plus textbook sidereal-time and alt/az math (Meeus), a 1°-per-column /
+  2°-per-row projection with the fence as the horizon, and `parseView` for the
+  URL hash. Pure like moon.js: the **date is an argument** — no clock, no
+  randomness, no DOM (enforced by a test). The catalog is the map, not the
+  view: seasons and hours come from the sidereal formula, and the data itself
+  is good for decades (proper motion ~900 yr/cell; precession ~0.36° since
+  J2000, uncorrected on purpose).
 - `js/scene.js` — composes the whole scene for a grid size: sizing math
   (`fitFontSize`/`fitGrid`), `layout()`, sprite data, and seeded placement of
   stars, lawn, weathering and vines. **Pure**: no DOM, no `Date`, no
@@ -56,6 +68,10 @@ All of the above are enforced by tests.
   rules are the no-JS fallback's layout; `main.js` overrides them inline.
 - `test/moon.test.js` — pins the algorithm to published dates plus the moon's
   rendering invariants.
+- `test/sky.test.js` — pins the astronomy to **published values** (Meeus
+  examples 12.b and 13.b, Polaris-at-latitude geometry), never to our own
+  output; plus catalog integrity, projection invariants, `parseView`, and
+  sky.js purity.
 - `test/scene.test.js` — pins art fidelity byte-for-byte, sizing and layout
   sweeps, determinism and resize stability, placement, and the animations.
 - `test/page.test.js` — fallback drift, `file://`/script-order/case safety, CSP
@@ -98,7 +114,14 @@ point that cannot fail. Sweep the fractional row; start the clock late.
   so the rail is occluded across its base and the tail region takes the cat's
   colour. Otherwise the rail's brown butts into the leg tips and closes the gap
   between the legs, greying out the cat's base.
-- Star density stays near the original ~1.1% (one per ~88 sky cells) at any size.
+- **The stars are the real sky** — Barcelona looking south by default, any
+  vantage via the hash fragment, frozen at the load instant (refreshing is how
+  time advances; same contract as the moon phase). `SKY_MAG_LIMIT` (3.6) is
+  the one density knob, calibrated to the original ~1.1%; brightness maps to
+  the original glyphs (`*` ≤ 2.0, `'` ≤ 3.0, `.` fainter). **The moon stays
+  anchored above the cat wherever the real moon is — the one unreal object,
+  on purpose.** The seeded hash stars remain as scene.js's fallback whenever
+  no `stars` input is supplied (tests, no-sky environments), still at ~1.1%.
 - `GROUND_EXTRA_ROWS` (2) is the lawn's thickness, drawn strictly below the
   fence; `LAWN_ROW_DENSITY` must have exactly that many entries. It is balanced
   against `TOP_PAD_ROWS` (13) to keep `BASE_ROWS` at 44 — change them as a pair
@@ -189,9 +212,12 @@ Rules:
 
 ## Determinism
 
-Stars, lawn, weathering and vines are placed by `hash2` over core-relative
-coordinates with no randomness source, so the scene is identical on every load
-and *translates* rather than reshuffles when the window resizes.
+Lawn, weathering and vines are placed by `hash2` over core-relative
+coordinates with no randomness source; the real sky depends only on the load
+instant and the hash-fragment vantage. Either way the scene is identical for
+a given moment and *translates* rather than reshuffles when the window
+resizes — a wider grid reveals more sky at the edges without moving what is
+already shown.
 
 Two traps live here:
 

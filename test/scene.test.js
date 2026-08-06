@@ -348,6 +348,35 @@ test('a fence post hidden by the tail comes back once it swings away', () => {
     assert.equal(at(Scene.TAIL_REST_FRAME, 3, 11).cls, 'fence');
 });
 
+test('a supplied real sky replaces the hash stars and obeys the same halos', () => {
+    const opts = { cols: 140, rows: 50, moonRows: MoonPhase.renderMoonRows(4) };
+    const L = Scene.buildScene(opts).layout;
+
+    // On the moon: skipped. On the cat: skipped. In open sky: drawn verbatim.
+    const onMoon = { x: L.moonBox.left + 3, y: L.moonBox.top + 3, char: '*', cls: 'star' };
+    const onCat = { x: L.catBox.left + 3, y: L.catBox.top + 3, char: '*', cls: 'star' };
+    const open = { x: 5, y: 5, char: '\'', cls: 'star star-2' };
+    const offGrid = { x: -3, y: 500, char: '*', cls: 'star' };
+    const scene = Scene.buildScene({ ...opts, stars: [onMoon, onCat, open, offGrid, null] });
+    const cells = Scene.sceneToCells(scene);
+
+    assert.equal(cells[5][5].char, '\'');
+    assert.equal(cells[5][5].cls, 'star star-2');
+    assert.notEqual(cells[onMoon.y][onMoon.x].cls, 'star', 'a star was drawn on the moon');
+    const catCell = cells[onCat.y] && cells[onCat.y][onCat.x];
+    assert.ok(!catCell || catCell.cls !== 'star', 'a star was drawn on the cat');
+    assert.equal(scene.grid.length, 50, 'off-grid star broke the grid');
+
+    // With stars supplied, none of the hash-placed field remains: an empty
+    // real sky is an empty sky.
+    const none = Scene.sceneToCells(Scene.buildScene({ ...opts, stars: [] }));
+    let starCells = 0;
+    none.forEach((row) => row.forEach((c) => {
+        if (c.cls && c.cls.indexOf('star') === 0) starCells++;
+    }));
+    assert.equal(starCells, 0, 'hash stars leaked through a supplied sky');
+});
+
 test('a meteor never shows through the cat', () => {
     // Regression: the cat is an outline, so most of its bounding box is blank.
     // Testing only its glyphs let the streak draw straight through its body.
