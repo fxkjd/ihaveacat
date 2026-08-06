@@ -45,7 +45,7 @@ test('page stays file:// compatible and script order is correct', () => {
     assert.doesNotMatch(html, /(src|href)="\//, 'absolute path breaks file://');
 
     const order = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]);
-    assert.deepEqual(order, ['js/moon.js', 'js/scene.js', 'js/main.js']);
+    assert.deepEqual(order, ['js/moon.js', 'js/sky.js', 'js/scene.js', 'js/main.js']);
 
     const refs = [
         ...order,
@@ -124,14 +124,14 @@ test('every class the scene can emit is styled in css/style.css', () => {
     });
 });
 
-test('scene.js and moon.js expose their browser (non-CommonJS) global correctly', () => {
-    ['js/scene.js', 'js/moon.js'].forEach((rel) => {
+test('scene.js, moon.js and sky.js expose their browser (non-CommonJS) global correctly', () => {
+    const globals = { 'js/scene.js': 'Scene', 'js/moon.js': 'MoonPhase', 'js/sky.js': 'SkyMap' };
+    Object.keys(globals).forEach((rel) => {
         const src = readFile(rel);
         const sandbox = {};
         vm.createContext(sandbox);
         vm.runInContext(src, sandbox); // no `module` in scope -> exercises the browser branch
-        const globalName = rel.includes('scene') ? 'Scene' : 'MoonPhase';
-        assert.equal(typeof sandbox[globalName], 'object', `${rel} did not expose ${globalName}`);
+        assert.equal(typeof sandbox[globals[rel]], 'object', `${rel} did not expose ${globals[rel]}`);
     });
 });
 

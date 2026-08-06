@@ -511,19 +511,32 @@
             }
         }
 
-        // Stars: sky is everything strictly above the horizon.
-        var starBottom = L.groundRow - 1;
-        for (y = 0; y <= starBottom && y < rows; y++) {
-            for (x = 0; x < cols; x++) {
-                var gx = x - L.coreLeft, gy2 = y - L.groundRow;
-                var bx = Math.floor(gx / STAR_BLOCK_W), by = Math.floor(gy2 / STAR_BLOCK_H);
-                var h = hash2(bx, by, seed ^ SEED_STAR);
-                var starX = bx * STAR_BLOCK_W + (h % STAR_BLOCK_W);
-                var starY = by * STAR_BLOCK_H + ((h >>> 8) % STAR_BLOCK_H);
-                if (starX === gx && starY === gy2 && !occupied(x, y, L)) {
-                    var glyph = STAR_GLYPHS[(h >>> 16) & 7];
-                    var variant = (h >>> 20) & 3;
-                    set(x, y, glyph, variant === 0 ? 'star' : 'star star-' + variant);
+        // Stars. When the caller supplies a real sky (SkyMap.starCells output,
+        // already in grid coordinates), draw that; otherwise fall back to the
+        // seeded hash placement, which keeps buildScene() with no options —
+        // and every environment without sky.js — rendering the original page.
+        // Both paths obey occupied(): never on the moon, cat or fence halos.
+        if (opts.stars) {
+            opts.stars.forEach(function (s) {
+                if (!s) return;
+                if (s.x < 0 || s.x >= cols || s.y < 0 || s.y >= rows) return;
+                if (occupied(s.x, s.y, L)) return;
+                set(s.x, s.y, s.char, s.cls);
+            });
+        } else {
+            var starBottom = L.groundRow - 1;
+            for (y = 0; y <= starBottom && y < rows; y++) {
+                for (x = 0; x < cols; x++) {
+                    var gx = x - L.coreLeft, gy2 = y - L.groundRow;
+                    var bx = Math.floor(gx / STAR_BLOCK_W), by = Math.floor(gy2 / STAR_BLOCK_H);
+                    var h = hash2(bx, by, seed ^ SEED_STAR);
+                    var starX = bx * STAR_BLOCK_W + (h % STAR_BLOCK_W);
+                    var starY = by * STAR_BLOCK_H + ((h >>> 8) % STAR_BLOCK_H);
+                    if (starX === gx && starY === gy2 && !occupied(x, y, L)) {
+                        var glyph = STAR_GLYPHS[(h >>> 16) & 7];
+                        var variant = (h >>> 20) & 3;
+                        set(x, y, glyph, variant === 0 ? 'star' : 'star star-' + variant);
+                    }
                 }
             }
         }
