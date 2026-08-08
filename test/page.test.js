@@ -112,8 +112,14 @@ test('every class the scene can emit is styled in css/style.css', () => {
     const MoonPhase = require('../js/moon.js');
     const used = new Set();
     for (let phase = 0; phase < 8; phase++) {
+        // Animation options included, so their classes are covered too: the
+        // meteor head sits in open sky on this grid, and one firefly per
+        // brightness phase sits in the lawn rows (groundRow 87 -> 88-89).
         const scene = Scene.buildScene({
-            cols: 220, rows: 90, moonRows: MoonPhase.renderMoonRows(phase)
+            cols: 220, rows: 90, moonRows: MoonPhase.renderMoonRows(phase),
+            tailFrame: 0,
+            meteor: { row: 20, col: 60, path: 0 },
+            fireflies: Scene.FIREFLY_PHASES.map((_, i) => ({ x: 3 + i, y: 88 + (i % 2), phase: i }))
         });
         scene.grid.forEach((runs) => runs.forEach((run) => {
             if (run.cls) run.cls.split(' ').forEach((c) => used.add(c));

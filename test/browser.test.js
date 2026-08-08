@@ -367,3 +367,76 @@ test('flipping prefers-reduced-motion mid-session stops and restarts the animati
     tickUntilMeteor(page);
     assert.deepEqual(page.errors, []);
 });
+
+// The grid rows currently holding a firefly run, by row index. Row spans are
+// the <pre>'s element children; the '\n' separators between them are text
+// nodes with no tagName.
+function fireflyRows(page) {
+    const rows = page.pre.children.filter((c) => c.tagName === 'span');
+    const out = [];
+    rows.forEach((row, y) => {
+        (row.children || []).forEach((run) => {
+            if (String(run.className).indexOf('firefly') === 0) out.push(y);
+        });
+    });
+    return out;
+}
+
+function tickUntilFirefly(page) {
+    for (let t = 0; t < 1500; t++) {
+        page.tick();
+        if (fireflyRows(page).length > 0) return;
+    }
+    assert.fail('no firefly ever lit');
+}
+
+test('fireflies blink in the lawn rows only, and the reduced-motion flip snuffs a lit one', () => {
+    const page = loadPage({ random: () => 0.5 });
+    const g = gridFor(1400, 900);
+    const L = Scene.layout(g.cols, g.rows);
+
+    tickUntilFirefly(page);
+
+    // Watch a whole blink and then some: every lit cell stays strictly below
+    // the fence's base, and the glow must swell through dim to bright and
+    // back — a static dot is not a firefly.
+    const seen = new Set();
+    for (let i = 0; i < 180; i++) {
+        fireflyRows(page).forEach((y) => {
+            assert.ok(y > L.groundRow && y < g.rows,
+                `a firefly lit outside the lawn, on row ${y}`);
+        });
+        page.paintedClasses().forEach((c) => {
+            if (c.indexOf('firefly') === 0) seen.add(c);
+        });
+        page.tick();
+    }
+    assert.ok(seen.has('firefly-dim'), 'the blink never showed its dim pose');
+    assert.ok(seen.has('firefly'), 'the blink never reached full glow');
+
+    // Catch one lit, then flip: the glow must vanish, not freeze. The 40 s
+    // byte-stillness test above cannot see this — a frozen glow never changes.
+    tickUntilFirefly(page);
+    page.setReducedMotion(true);
+    page.tick();
+    page.tick();
+    assert.equal(fireflyRows(page).length, 0,
+        'a lit firefly froze on screen through the flip to reduced motion');
+
+    // And back off: they return on their own.
+    page.setReducedMotion(false);
+    tickUntilFirefly(page);
+    assert.deepEqual(page.errors, []);
+});
+
+test('prefers-reduced-motion at load means no firefly ever lights', () => {
+    const page = loadPage({ reducedMotion: true });
+    // 25 s of page time — past both slots' latest possible first light. The
+    // scan is per tick: a transient blink between samples must not slip by.
+    for (let i = 0; i < 1500; i++) {
+        page.tick();
+        assert.equal(fireflyRows(page).length, 0,
+            'a firefly lit despite prefers-reduced-motion');
+    }
+    assert.deepEqual(page.errors, []);
+});

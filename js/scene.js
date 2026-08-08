@@ -129,6 +129,21 @@
     var METEOR_FADE_AT = 5;      // from here back the trail thins to dots
 
     /*
+     * Fireflies: they blink in place in the lawn — no drifting. Each phase is
+     * a discrete brightness pose; a blink is one stepped sweep through
+     * FIREFLY_BLINK_SEQUENCE (fade in, glow, fade out), driven from main.js
+     * on a timer exactly like the tail wag. Brightness lives in the colour
+     * classes, not a CSS keyframe, so the reduced-motion CSS guard needs no
+     * entry for it — a reduced page simply never paints one.
+     */
+    var FIREFLY_PHASES = [
+        { char: '.', cls: 'firefly-dim' },   // a faint spark among the tufts
+        { char: '*', cls: 'firefly-dim' },   // swelling
+        { char: '*', cls: 'firefly' }        // full glow
+    ];
+    var FIREFLY_BLINK_SEQUENCE = [0, 1, 2, 2, 2, 1, 0];
+
+    /*
      * Weathering. A few pickets sag or are missing so the fence reads as an
      * old garden fence rather than a printed band. Keyed on core-relative
      * picket columns via hash2, so it is identical on every load and does not
@@ -312,6 +327,16 @@
             row >= box.top && row <= box.bottom;
     }
 
+    /*
+     * The glyph and class for one firefly's brightness phase. Unknown phases
+     * mean "unlit" and return null, so a caller stepping outside the sequence
+     * draws nothing rather than garbage. Pure: the caller owns where and when.
+     */
+    function fireflyCell(f) {
+        if (!f) return null;
+        return FIREFLY_PHASES[f.phase] || null;
+    }
+
     // The tail pose for a wag frame; out-of-range indices fall back to rest.
     function tailPose(frame) {
         return TAIL_WAG_FRAMES[frame] || TAIL_WAG_FRAMES[TAIL_REST_FRAME];
@@ -473,6 +498,8 @@
      *   omitted the moon area is left as plain sky (useful for tests that
      *   only care about the rest of the scene).
      * opts.seed: optional integer to vary star/lawn placement; defaults to 0.
+     * opts.fireflies: optional array of { x, y, phase } — lit fireflies, in
+     *   absolute grid coordinates; entries may be null (an unlit slot).
      */
     function buildScene(opts) {
         opts = opts || {};
@@ -655,6 +682,20 @@
             });
         }
 
+        // Fireflies: strictly in the lawn rows, in front of the tufts. Judged
+        // against the CURRENT layout; anything outside the band or the grid
+        // is dropped silently, so a firefly spawned before a resize can never
+        // surface on the fence or in the sky.
+        if (opts.fireflies) {
+            opts.fireflies.forEach(function (f) {
+                var cell = fireflyCell(f);
+                if (!cell) return;
+                var fx = Math.round(f.x), fy = Math.round(f.y);
+                if (fx < 0 || fx >= cols || fy <= L.groundRow || fy >= rows) return;
+                set(fx, fy, cell.char, cell.cls);
+            });
+        }
+
         return { cols: cols, rows: rows, layout: L, grid: grid.map(toRuns) };
     }
 
@@ -724,6 +765,8 @@
         TAIL_REST_FRAME: TAIL_REST_FRAME,
         METEOR_PATHS: METEOR_PATHS,
         METEOR_LENGTH: METEOR_LENGTH,
+        FIREFLY_PHASES: FIREFLY_PHASES,
+        FIREFLY_BLINK_SEQUENCE: FIREFLY_BLINK_SEQUENCE,
 
         hash2: hash2,
         fenceChar: fenceChar,
@@ -735,6 +778,7 @@
         tailPose: tailPose,
         meteorCells: meteorCells,
         meteorAlive: meteorAlive,
+        fireflyCell: fireflyCell,
         fenceRowText: fenceRowText,
         layout: layout,
         fitFontSize: fitFontSize,
