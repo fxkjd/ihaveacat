@@ -131,8 +131,8 @@ point that cannot fail. Sweep the fractional row; start the clock late.
 
 ## Animations
 
-Scheduled from `main.js`; `scene.js` takes the current `tailFrame` and `meteor`
-head as plain inputs and stays pure.
+Scheduled from `main.js`; `scene.js` takes the current `tailFrame`, `meteor`
+head and `fireflies` as plain inputs and stays pure.
 
 - **Tail wag** — every 5–10 s, a full sweep through `TAIL_WAG_SEQUENCE` at
   ~180 ms per frame, then back to rest. It steps between poses rather than
@@ -143,6 +143,13 @@ head as plain inputs and stays pure.
   sky and extended outwards until the whole streak is off-screen at both ends,
   so it never pops in or out; on a narrow window it may leave through a side
   edge rather than the bottom.
+- **Fireflies** — `FIREFLY_MAX` (2) independent slots; each lights a random
+  lawn cell, steps dim → bright → dim through `FIREFLY_BLINK_SEQUENCE` (~2.8 s
+  at `FIREFLY_STEP_MS` per pose), goes dark for 3–7 s, then lights somewhere
+  new. They blink **in place** — no drifting. Discrete poses, so `setTimeout`
+  like the wag; brightness is colour classes repainted by JS, not a CSS
+  keyframe, so the reduced-motion CSS list needs no entry for them.
+  `FIREFLY_MIN_MS`/`FIREFLY_MAX_MS` (the gap range) is the density knob.
 
 Rules:
 
@@ -202,13 +209,23 @@ Rules:
   glyph just inside it and get clipped.
 - Meteors overwrite stars and nothing else. The fence needs no test — cells at
   or below the horizon are clipped, so meteors slide behind it.
-- Both honour `prefers-reduced-motion` **live**, matching the CSS twinkle guard
-  (a media query, so the stars stop the instant the OS setting flips — sampling
-  it once at load left the JS animations running until reload). `motionGen` is
-  a generation counter: every flip bumps it, every timer/rAF chain carries the
-  generation it started with and dies silently on mismatch. That stops running
-  chains without keeping handles to them, and makes restarts idempotent — a
-  timer still pending from before the flip cannot revive a second chain.
+- **Fireflies exist only in the lawn rows** — the owner's decision. `buildScene`
+  clips them against the CURRENT layout's ground band (and the grid) and drops
+  the rest silently, so one spawned before a resize can never surface on the
+  fence or in the sky — it goes dark and the next blink spawns on the new grid.
+  Each spawn picks its cell from the current `last` grid; the two slots may
+  rarely coincide, which draws one glyph and is harmless.
+- All of them honour `prefers-reduced-motion` **live**, matching the CSS twinkle
+  guard (a media query, so the stars stop the instant the OS setting flips —
+  sampling it once at load left the JS animations running until reload).
+  `motionGen` is a generation counter: every flip bumps it, every timer/rAF
+  chain carries the generation it started with and dies silently on mismatch.
+  That stops running chains without keeping handles to them, and makes restarts
+  idempotent — a timer still pending from before the flip cannot revive a second
+  chain. The change listener also clears `anim.fireflies` — the `gen` check only
+  stops the chain, and without the reset a lit glow froze on screen (invisible
+  to a byte-stillness assertion; `test/browser.test.js` checks the snuff
+  explicitly).
 
 ## Determinism
 

@@ -78,6 +78,18 @@
 	color: #9fb3c8;
     }
     /*
+     * Fireflies in the lawn: a warm glow rising out of the grass colour and
+     * sinking back. Brightness is repainted from main.js as discrete poses
+     * (like the tail wag) — no keyframe here, so there is nothing to add to
+     * the reduced-motion block below: a reduced page never paints one.
+     */
+    .firefly {
+	color: #ffe97a;
+    }
+    .firefly-dim {
+	color: #9aa25f;
+    }
+    /*
      * Only ever takes effect when JS hasn't run: main.js sets an inline
      * font-size, which outranks any stylesheet rule.
      */

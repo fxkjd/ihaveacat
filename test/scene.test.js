@@ -274,6 +274,9 @@ test('the resting scene is unchanged by the animation feature', () => {
     assert.equal(Scene.sceneToText(Scene.buildScene({ ...opts, tailFrame: Scene.TAIL_REST_FRAME })), plain,
         'the default pose must be the resting pose');
     assert.equal(Scene.sceneToText(Scene.buildScene({ ...opts, meteor: null })), plain);
+    assert.equal(Scene.sceneToText(Scene.buildScene({ ...opts, fireflies: [] })), plain);
+    assert.equal(Scene.sceneToText(Scene.buildScene({ ...opts, fireflies: [null] })), plain,
+        'an unlit firefly slot must draw nothing');
 
     // The resting tail must still draw exactly what the static art does, so a
     // still page is byte-identical to the no-JS fallback's tail.
@@ -543,6 +546,115 @@ test('an off-grid meteor clips instead of throwing', () => {
 });
 
 
+// ---- Fireflies -----------------------------------------------------------
+
+// Every cell in a scene whose class is a firefly class, as {x, y, char, cls}.
+function fireflyCellsIn(scene) {
+    const found = [];
+    Scene.sceneToCells(scene).forEach((row, y) => row.forEach((cell, x) => {
+        if (String(cell.cls).startsWith('firefly')) found.push({ x, y, char: cell.char, cls: cell.cls });
+    }));
+    return found;
+}
+
+test('fireflies light only the lawn rows, wherever they are asked for', () => {
+    // 141x53 is deliberately not a tidy grid: groundRow 50, lawn rows 51-52.
+    const opts = { cols: 141, rows: 53, moonRows: MoonPhase.renderMoonRows(4) };
+    const L = Scene.buildScene(opts).layout;
+    assert.equal(L.groundRow, 50, 'the sweep below assumes this layout');
+
+    let scenesThatDrew = 0;
+    for (let y = -3; y <= 55; y++) {
+        const scene = Scene.buildScene({ ...opts, fireflies: [{ x: 17, y, phase: 2 }] });
+        const lit = fireflyCellsIn(scene);
+        lit.forEach((c) => {
+            assert.ok(c.y > L.groundRow && c.y < scene.rows,
+                `firefly drawn outside the lawn at ${c.x},${c.y} (asked for y=${y})`);
+        });
+        if (lit.length > 0) scenesThatDrew++;
+    }
+    // Exactly the two lawn rows may draw — a sweep that never draws, or that
+    // draws everywhere, proves nothing.
+    assert.equal(scenesThatDrew, Scene.GROUND_EXTRA_ROWS);
+
+    // Off-grid columns clip instead of throwing, like the meteor.
+    [-1, 141, 500].forEach((x) => {
+        const scene = Scene.buildScene({ ...opts, fireflies: [{ x, y: 51, phase: 2 }] });
+        assert.equal(fireflyCellsIn(scene).length, 0, `firefly drawn at off-grid x=${x}`);
+        assert.equal(scene.grid.length, 53);
+    });
+});
+
+test('the firefly poses are pinned glyph for glyph and the blink is a swell', () => {
+    assert.deepEqual(Scene.FIREFLY_PHASES, [
+        { char: '.', cls: 'firefly-dim' },
+        { char: '*', cls: 'firefly-dim' },
+        { char: '*', cls: 'firefly' }
+    ]);
+    // No pose may be a space: toRuns trims trailing spaces regardless of
+    // class, so a space glyph in the last column would silently vanish.
+    Scene.FIREFLY_PHASES.forEach((p, i) => {
+        assert.notEqual(p.char, ' ', `phase ${i} draws a space`);
+        assert.deepEqual(Scene.fireflyCell({ phase: i }), p);
+    });
+    // Unknown phases mean "unlit", never garbage.
+    assert.equal(Scene.fireflyCell(null), null);
+    assert.equal(Scene.fireflyCell({ phase: -1 }), null);
+    assert.equal(Scene.fireflyCell({ phase: Scene.FIREFLY_PHASES.length }), null);
+    const opts = { cols: 141, rows: 53 };
+    assert.equal(fireflyCellsIn(Scene.buildScene({
+        ...opts, fireflies: [{ x: 17, y: 51, phase: 7 }]
+    })).length, 0, 'an out-of-range phase drew something');
+
+    // The blink fades in, peaks at the brightest pose, and fades back out —
+    // it must start and end dark-adjacent, not pop in at full glow.
+    const seq = Scene.FIREFLY_BLINK_SEQUENCE;
+    assert.equal(seq[0], 0, 'the blink must start at the dimmest pose');
+    assert.equal(seq[seq.length - 1], 0, 'the blink must end at the dimmest pose');
+    assert.equal(Math.max(...seq), Scene.FIREFLY_PHASES.length - 1,
+        'the blink never reaches full glow');
+    seq.forEach((p, i) => {
+        assert.ok(Scene.FIREFLY_PHASES[p], `sequence step ${i} is not a phase`);
+        assert.equal(p, seq[seq.length - 1 - i], 'the swell is lopsided');
+    });
+});
+
+test('a fractional firefly renders exactly as its rounded cell', () => {
+    const opts = { cols: 141, rows: 53, moonRows: MoonPhase.renderMoonRows(2) };
+    const whole = Scene.sceneToText(Scene.buildScene({
+        ...opts, fireflies: [{ x: 17, y: 51, phase: 2 }]
+    }));
+    [0.1, 0.34, 0.49].forEach((frac) => {
+        assert.equal(Scene.sceneToText(Scene.buildScene({
+            ...opts, fireflies: [{ x: 17 + frac, y: 51 + frac, phase: 2 }]
+        })), whole, `a firefly at +${frac} differs from its rounded cell`);
+    });
+    assert.equal(Scene.sceneToText(Scene.buildScene({
+        ...opts, fireflies: [{ x: 17, y: 50.5, phase: 2 }]
+    })), Scene.sceneToText(Scene.buildScene({
+        ...opts, fireflies: [{ x: 17, y: 51, phase: 2 }]
+    })), 'the half-row boundary rounds differently from Math.round');
+});
+
+test('a firefly sits in front of a tuft and the grass returns when it goes dark', () => {
+    const opts = { cols: 141, rows: 53, moonRows: MoonPhase.renderMoonRows(4) };
+    const plainScene = Scene.buildScene(opts);
+    const plain = Scene.sceneToText(plainScene);
+    const y = plainScene.layout.groundRow + 1;
+    const row = cellsOf(plainScene, y);
+    const tuftX = row.findIndex((c) => c.cls === 'lawn' && c.char !== ' ');
+    assert.ok(tuftX >= 0, 'no tuft to test against');
+
+    const lit = Scene.buildScene({ ...opts, fireflies: [{ x: tuftX, y, phase: 2 }] });
+    const cell = cellsOf(lit, y)[tuftX];
+    assert.equal(cell.char, '*');
+    assert.equal(cell.cls, 'firefly');
+
+    // Gone dark, the tuft underneath is exactly what it always was.
+    assert.equal(Scene.sceneToText(Scene.buildScene({ ...opts, fireflies: [null] })), plain);
+});
+
+
 // ---- Sizing math --------------------------------------------------------
 
 test('fitFontSize/fitGrid worked examples', () => {
@@ -780,7 +892,14 @@ test('the lawn sits strictly below the fence and spans the full width', () => {
 // ---- Structure -----------------------------------------------------------
 
 test('scene structure invariants: no empty runs, no adjacent same-class runs, correct row count', () => {
-    const scene = Scene.buildScene({ cols: 140, rows: 55, moonRows: MoonPhase.renderMoonRows(1) });
+    // Fireflies at both extremes of the lawn rows (140x55: groundRow 52,
+    // lawn 53-54): col 0 splits a lawn run at the row's start, and the last
+    // column exercises the trailing-trim edge — a lit glyph there must keep
+    // the row full-length.
+    const scene = Scene.buildScene({
+        cols: 140, rows: 55, moonRows: MoonPhase.renderMoonRows(1),
+        fireflies: [{ x: 0, y: 53, phase: 0 }, { x: 139, y: 54, phase: 2 }]
+    });
     assert.equal(scene.grid.length, 55);
     scene.grid.forEach((runs, y) => {
         let lastCls = Symbol('none');

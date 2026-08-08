@@ -192,8 +192,16 @@
     // cell, since the path is the diagonal. The one speed knob.
     var METEOR_CELLS_PER_SEC = 54;
     var METEOR_MIN_MS = 20000, METEOR_MAX_MS = 30000;
+    // Fireflies: stepped brightness poses on a timer, like the wag. A blink
+    // is FIREFLY_BLINK_SEQUENCE at FIREFLY_STEP_MS per pose (~2.8 s), then
+    // the slot goes dark for a gap before lighting somewhere new. FIREFLY_MAX
+    // independent slots cap concurrency at 2 — usually one or none is lit;
+    // the gap range is the density knob.
+    var FIREFLY_STEP_MS = 400;
+    var FIREFLY_MIN_MS = 3000, FIREFLY_MAX_MS = 7000;
+    var FIREFLY_MAX = 2;
 
-    var anim = { tailFrame: Scene.TAIL_REST_FRAME, meteor: null };
+    var anim = { tailFrame: Scene.TAIL_REST_FRAME, meteor: null, fireflies: [] };
 
     /*
      * prefers-reduced-motion is honoured LIVE, matching the CSS twinkle guard
@@ -217,7 +225,8 @@
             moonRows: moonRows,
             stars: skyStars,
             tailFrame: anim.tailFrame,
-            meteor: anim.meteor
+            meteor: anim.meteor,
+            fireflies: anim.fireflies
         });
     }
 
@@ -321,11 +330,54 @@
         requestAnimationFrame(frame);
     }
 
+    function runFirefly(gen, slot) {
+        if (gen !== motionGen) return;
+        if (!(last.cols > 0)) {
+            after(FIREFLY_MIN_MS, FIREFLY_MAX_MS, function () { runFirefly(gen, slot); });
+            return;
+        }
+        // Position from the CURRENT grid, never a stale copy: buildScene
+        // clips against the live layout, so a mid-blink resize simply drops
+        // this one and the next spawn lands somewhere valid on the new grid.
+        var L = Scene.layout(last.cols, last.rows);
+        var fly = {
+            x: Math.floor(Math.random() * last.cols),
+            y: L.groundRow + 1 + Math.floor(Math.random() * Scene.GROUND_EXTRA_ROWS),
+            phase: 0
+        };
+        var seq = Scene.FIREFLY_BLINK_SEQUENCE;
+        var i = 0;
+        (function step() {
+            if (gen !== motionGen) return;   // reduced-motion flipped mid-blink
+            if (i < seq.length) {
+                fly.phase = seq[i++];
+                anim.fireflies[slot] = fly;
+                redraw();
+                setTimeout(step, FIREFLY_STEP_MS);
+            } else {
+                // Unlike the wag, the sequence does not end at a resting
+                // state: the slot has to be put out explicitly, and the tuft
+                // underneath returns on the redraw.
+                anim.fireflies[slot] = null;
+                redraw();
+                after(FIREFLY_MIN_MS, FIREFLY_MAX_MS, function () { runFirefly(gen, slot); });
+            }
+        })();
+    }
+
     function startAnimations() {
         if (motionQuery && motionQuery.matches) return;
         var gen = motionGen;
         after(WAG_MIN_MS, WAG_MAX_MS, function () { runWag(gen); });
         after(METEOR_MIN_MS, METEOR_MAX_MS, function () { runMeteor(gen); });
+        for (var slot = 0; slot < FIREFLY_MAX; slot++) {
+            (function (s) {
+                // Staggered first light, so the page doesn't open on a
+                // double flash; the jittered gaps keep them apart after.
+                after(FIREFLY_MIN_MS * (s + 1), FIREFLY_MAX_MS * (s + 1),
+                    function () { runFirefly(gen, s); });
+            })(slot);
+        }
     }
 
     if (motionQuery && motionQuery.addEventListener) {
@@ -333,6 +385,7 @@
             motionGen++;                              // stale chains die at their next tick
             anim.tailFrame = Scene.TAIL_REST_FRAME;
             anim.meteor = null;
+            anim.fireflies = [];                      // a lit glow must not freeze on screen
             redraw();                                 // straight back to the resting scene
             startAnimations();                        // a no-op while reduce stays on
         });
