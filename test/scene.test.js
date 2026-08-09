@@ -933,3 +933,50 @@ test('scene.js exposes window.Scene when loaded as a classic script', () => {
     vm.runInContext(src, sandbox);
     assert.equal(typeof sandbox.Scene.buildScene, 'function');
 });
+
+test('starVisible is exactly the set of supplied stars buildScene draws', () => {
+    // The hover lookup in main.js keys off this predicate. If it ever
+    // disagreed with what buildScene paints, the page would name stars that
+    // are not on screen — silently, since nothing else would fail.
+    const cols = 70, rows = 46;
+    const opts = { cols, rows, moonRows: MoonPhase.renderMoonRows(4) };
+    const L = Scene.buildScene(opts).layout;
+
+    // Every cell of the grid, plus some off it and a null, as the real input
+    // can contain (starCells clips to the window, buildScene must not assume).
+    const all = [];
+    for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) all.push({ x, y, char: '*', cls: 'star' });
+    }
+    all.push({ x: -1, y: 5, char: '*', cls: 'star' });
+    all.push({ x: 5, y: rows + 3, char: '*', cls: 'star' });
+    all.push(null);
+
+    const cells = Scene.sceneToCells(Scene.buildScene({ ...opts, stars: all }));
+    const painted = new Set();
+    cells.forEach((row, y) => row.forEach((cell, x) => {
+        if (cell.cls === 'star') painted.add(x + ':' + y);
+    }));
+    const visible = new Set(
+        all.filter((s) => Scene.starVisible(s, L)).map((s) => s.x + ':' + s.y)
+    );
+
+    assert.deepEqual([...painted].sort(), [...visible].sort());
+    // Both preconditions, so the assertion above cannot pass by being empty
+    // or by nothing ever being dropped.
+    assert.ok(visible.size > 0, 'no star was drawn at all');
+    assert.ok(visible.size < all.length - 3, 'nothing was occluded — check the halos');
+});
+
+test('a star inside the moon, cat or fence halo is not visible', () => {
+    const L = Scene.buildScene({ cols: 70, rows: 46 }).layout;
+    const at = (x, y) => Scene.starVisible({ x, y, char: '*', cls: 'star' }, L);
+
+    [L.moonBox, L.catBox, L.fenceBox].forEach((box) => {
+        assert.equal(at(box.left, box.top), false, 'inside the box');
+        // The halo is one cell wide all round, so the ring outside is dead too.
+        assert.equal(at(box.left - 1, box.top - 1), false, 'the halo');
+    });
+    assert.equal(at(0, 0), true, 'the top-left corner is open sky');
+    assert.equal(Scene.starVisible(null, L), false);
+});

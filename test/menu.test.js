@@ -10,18 +10,56 @@ const SkyMap = require('../js/sky.js');
 
 const BCN = SkyMap.formatFields(SkyMap.DEFAULT_VIEW);
 
-function textOf(fields) {
-    return Menu.rows(fields).map(Menu.rowText);
+function textOf(fields, settings) {
+    return Menu.rows(fields, settings).map(Menu.rowText);
+}
+
+// The compass row, found by what it holds rather than by its position, so
+// adding rows below it cannot quietly re-point these tests.
+function dirRow(fields) {
+    return Menu.rows(fields).find((row) => row.some((seg) => seg.dir));
 }
 
 test('the panel is drawn exactly as designed', () => {
     assert.deepEqual(textOf(BCN), [
-        '     vantage',
+        '     settings',
         '',
         ' lat  [  41.39 ]',
         ' lon  [   2.17 ]',
-        ' dir   n  e (s) w '
+        ' dir   n  e (s) w ',
+        '',
+        ' name ( )'
     ]);
+});
+
+test('a toggle is off unless the panel is asked for it', () => {
+    // rows() with no settings draws every toggle off: the default made
+    // structural, rather than a value someone has to remember to pass.
+    assert.deepEqual(Menu.rows(BCN), Menu.rows(BCN, undefined));
+    assert.deepEqual(Menu.rows(BCN), Menu.rows(BCN, {}));
+    assert.equal(textOf(BCN).pop(), ' name ( )');
+    assert.equal(textOf(BCN, { name: true }).pop(), ' name (x)');
+});
+
+test('marking a toggle shifts nothing and needs no colour', () => {
+    const off = Menu.rows(BCN, { name: false }).pop();
+    const on = Menu.rows(BCN, { name: true }).pop();
+    assert.equal(Menu.rowText(off).length, Menu.rowText(on).length);
+    // The brackets carry the state, so it reads with the palette stripped out.
+    assert.notEqual(off[1].text, on[1].text);
+    assert.match(on[1].cls, /\bmenu-toggle-on\b/);
+    assert.doesNotMatch(off[1].cls, /\bmenu-toggle-on\b/);
+    assert.match(off[1].cls, /\bmenu-label\b/);
+});
+
+test('the toggle keeps the panel label column', () => {
+    // ' name ' is six cells, so the mark starts where '[' and the first
+    // compass slot do.
+    const text = textOf(BCN);
+    const [lat, dir, name] = [text[2], text[4], text[6]];
+    assert.equal(lat.indexOf('['), 6);
+    assert.equal(dir.indexOf(' n '), 6);
+    assert.equal(name.indexOf('( )'), 6);
 });
 
 test('the brackets hold the same columns on both value rows', () => {
@@ -47,7 +85,7 @@ test('the longest value a fragment can hold still fits between the brackets', ()
 
 test('the compass marks the way you face, and only that way', () => {
     Menu.ROSE.forEach((dir) => {
-        const segs = Menu.rows({ ...BCN, dir }).pop();
+        const segs = dirRow({ ...BCN, dir });
         const on = segs.filter((s) => s.cls && s.cls.indexOf('menu-dir-on') >= 0);
         assert.equal(on.length, 1, dir);
         assert.equal(on[0].dir, dir);
@@ -64,7 +102,7 @@ test('the compass marks the way you face, and only that way', () => {
 });
 
 test('every direction row is the same width, so marking one shifts nothing', () => {
-    const widths = Menu.ROSE.map((dir) => textOf({ ...BCN, dir }).pop().length);
+    const widths = Menu.ROSE.map((dir) => Menu.rowText(dirRow({ ...BCN, dir })).length);
     assert.deepEqual(widths, widths.map(() => widths[0]));
 });
 

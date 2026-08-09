@@ -22,6 +22,7 @@ const vm = require('node:vm');
 
 const ROOT = path.join(__dirname, '..');
 const Scene = require('../js/scene.js');
+const SkyMap = require('../js/sky.js');
 
 // The grid main.js will derive for a viewport, given the harness's fixed
 // 0.6em character width (see getBoundingClientRect below).
@@ -95,9 +96,14 @@ function element(tag, doc) {
             return child;
         },
         // main.js measures a run of Ms to derive the character width; 0.6 em is
-        // what a real monospace face gives.
+        // what a real monospace face gives. A test can pin a full box by
+        // assigning `rect` — the hover label's width, for instance, which
+        // decides whether it flips at the right edge.
+        rect: null,
         getBoundingClientRect() {
-            return { width: this.textContent.length * parseFloat(this.style.fontSize || '10') * 0.6 };
+            if (this.rect) return this.rect;
+            const w = this.textContent.length * parseFloat(this.style.fontSize || '10') * 0.6;
+            return { left: 0, top: 0, right: w, bottom: 0, width: w, height: 0, x: 0, y: 0 };
         }
     };
 }
@@ -115,6 +121,11 @@ function loadPage(options) {
     const listeners = {};           // window event listeners, by type
     // The reduced-motion media query, stateful so a test can flip it live.
     const media = { matches: !!opts.reducedMotion, handlers: [] };
+    // A pointer that can hover, i.e. a mouse. Separate from the one above:
+    // a stub that ignored matchMedia's argument would answer BOTH queries with
+    // the reduced-motion state, silently disabling hover in every ordinary
+    // test and enabling it only for a reduced-motion user.
+    const hoverMedia = { matches: opts.hover !== false, handlers: [] };
 
     let hash = opts.hash || '';
     let hashChanges = 0;
@@ -147,10 +158,22 @@ function loadPage(options) {
             }
         },
         addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
-        matchMedia() {
+        // The menu announces a session-only setting this way — the analogue of
+        // hashchange for something that has no address bar.
+        CustomEvent: class {
+            constructor(type, init) { this.type = type; this.detail = init && init.detail; }
+        },
+        dispatchEvent(ev) {
+            (listeners[ev.type] || []).forEach((fn) => {
+                try { fn(ev); } catch (e) { errors.push(e); }
+            });
+            return true;
+        },
+        matchMedia(query) {
+            const m = /prefers-reduced-motion/.test(String(query)) ? media : hoverMedia;
             return {
-                get matches() { return media.matches; },
-                addEventListener(type, fn) { if (type === 'change') media.handlers.push(fn); }
+                get matches() { return m.matches; },
+                addEventListener(type, fn) { if (type === 'change') m.handlers.push(fn); }
             };
         },
         getComputedStyle() { return { fontFamily: 'monospace' }; },
@@ -167,7 +190,46 @@ function loadPage(options) {
     };
     win.window = win;
 
+    /*
+     * The <pre>'s real box, derived live so it can never go stale after a
+     * resize. The wrapper div is `position: absolute; bottom: 0`, so the grid
+     * hangs from the BOTTOM of the viewport — a stub answering top: 0 would let
+     * hover code that ignores the anchoring pass with its row index off by the
+     * entire height of the sky.
+     */
+    pre.getBoundingClientRect = function () {
+        var lineH = parseFloat(pre.style.lineHeight || '0') || 0;
+        // Row spans only: the '\n' separators are text nodes with no tagName.
+        var rows = pre.children.filter(function (c) { return c.tagName === 'span'; }).length;
+        var height = rows * lineH;
+        var left = parseFloat(pre.style.marginLeft || '0') || 0;
+        var top = win.document.documentElement.clientHeight - height;
+        var width = win.document.documentElement.clientWidth - left;
+        return {
+            left: left, top: top, right: left + width, bottom: top + height,
+            width: width, height: height, x: left, y: top
+        };
+    };
+
     const ctx = vm.createContext(win);
+    /*
+     * Pin the clock, so the sky and the moon phase are the same every run.
+     * main.js takes ONE instant at load, so this only has to hold on startup.
+     */
+    if (opts.now) {
+        const RealDate = vm.runInContext('Date', ctx);
+        const at = opts.now;
+        function StubDate() {
+            return arguments.length
+                ? new (Function.prototype.bind.apply(RealDate, [null].concat([].slice.call(arguments))))()
+                : new RealDate(at);
+        }
+        StubDate.prototype = RealDate.prototype;
+        StubDate.now = function () { return new RealDate(at).getTime(); };
+        StubDate.UTC = RealDate.UTC;
+        StubDate.parse = RealDate.parse;
+        win.Date = StubDate;
+    }
     // Pin the context's Math.random before the scripts load — main.js draws
     // from it during startup, and a deterministic flight lets a test aim it.
     if (opts.random) vm.runInContext('Math', ctx).random = opts.random;
@@ -197,6 +259,27 @@ function loadPage(options) {
         },
         gear() { return this.byClass('menu-gear')[0]; },
         panel() { return this.byClass('menu')[0]; },
+        label() { return this.byClass('star-name')[0]; },
+        toggle() { return this.byClass('menu-toggle')[0]; },
+        rect() { return pre.getBoundingClientRect(); },
+        // A pixel inside a grid cell. fx/fy pick where in the cell, so a test
+        // can sweep the fraction instead of only ever probing the centre.
+        pointAt(col, row, fx, fy) {
+            const r = pre.getBoundingClientRect();
+            const charW = parseFloat(pre.style.fontSize) * 0.6;
+            const lineH = parseFloat(pre.style.lineHeight);
+            return {
+                clientX: r.left + (col + (fx === undefined ? 0.5 : fx)) * charW,
+                clientY: r.top + (row + (fy === undefined ? 0.5 : fy)) * lineH
+            };
+        },
+        hover(col, row, fx, fy) { pre.dispatch('mousemove', this.pointAt(col, row, fx, fy)); },
+        leave() { pre.dispatch('mouseleave', {}); },
+        // Announce the session-only setting the way the menu does, so a test
+        // can drive the feature with no panel open.
+        setNames(on) {
+            win.dispatchEvent(new win.CustomEvent('settingschange', { detail: { names: on } }));
+        },
         field(name) {
             // lat then lon, in the order rows() lays them out.
             return this.byClass('menu-field')[name === 'lat' ? 0 : 1];
@@ -699,5 +782,361 @@ test('without js/sky.js there is no gear at all', () => {
     // worse than no control.
     assert.equal(page.gear(), undefined);
     assert.equal(page.panel(), undefined);
+    assert.deepEqual(page.errors, []);
+});
+
+// ---- Star names on hover -------------------------------------------------
+
+/*
+ * NOT the harness's default 1400x900. There the grid is exactly 45 rows of
+ * 20px = 900, so the <pre> fills the window, rect.top is 0, and hover code
+ * that ignored the wrapper's bottom anchoring would pass. At 939 the grid is
+ * 924px and hangs 15px down — the same lesson as "a flying meteor is never on
+ * a whole row". HOVER_TOP asserts the trap stays defused.
+ */
+const HOVER_W = 1400, HOVER_H = 939, HOVER_TOP = 15;
+const HOVER_NOW = Date.UTC(2026, 1, 14, 21, 0, 0);
+
+function hoverPage(extra) {
+    const page = loadPage({ now: HOVER_NOW, ...(extra || {}) });
+    page.resize(HOVER_W, HOVER_H);
+    page.tick();
+    assert.equal(page.rect().top, HOVER_TOP,
+        'the grid should not exactly fill the window, or this suite proves nothing');
+    return page;
+}
+
+// The sky main.js is drawing, split the way buildScene splits it.
+function skyFor() {
+    const grid = gridFor(HOVER_W, HOVER_H);
+    const layout = Scene.layout(grid.cols, grid.rows);
+    const cells = SkyMap.starCells({
+        date: new Date(HOVER_NOW),
+        lat: SkyMap.DEFAULT_VIEW.lat, lon: SkyMap.DEFAULT_VIEW.lon,
+        azimuth: SkyMap.DEFAULT_VIEW.azimuth,
+        cols: grid.cols, skyRows: layout.fenceTop
+    });
+    return {
+        grid, layout, cells,
+        shown: cells.filter((s) => Scene.starVisible(s, layout) && SkyMap.starLabel(s.index)),
+        dropped: cells.filter((s) => !Scene.starVisible(s, layout))
+    };
+}
+
+function labelFor(s) {
+    const l = SkyMap.starLabel(s.index);
+    return l.id ? l.name + '  ' + l.id : l.name;
+}
+
+// A named star with no other star in any of the eight cells around it, so
+// stepping over a cell edge is guaranteed to land on empty sky. Stars do sit
+// side by side in a constellation, and a neighbour would mask the very
+// boundary these tests are trying to find.
+function isolatedStar(sky) {
+    const taken = new Set(sky.cells.map((c) => c.x + ':' + c.y));
+    return sky.shown.find((s) => {
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                if ((dx || dy) && taken.has((s.x + dx) + ':' + (s.y + dy))) return false;
+            }
+        }
+        return true;
+    });
+}
+
+test('star names are off until they are asked for', () => {
+    const page = hoverPage();
+    const sky = skyFor();
+    assert.ok(sky.shown.length > 0, 'no named star is on screen to test with');
+
+    page.hover(sky.shown[0].x, sky.shown[0].y);
+    page.tick();
+    assert.equal(page.label().hidden, true, 'a name showed without being enabled');
+    assert.equal(page.label().textContent, '');
+
+    // And the panel agrees.
+    page.gear().click();
+    assert.equal(page.toggle().textContent, '( )');
+    assert.deepEqual(page.errors, []);
+});
+
+test('hovering a star names it, and only where the star is', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const sky = skyFor();
+    const s = sky.shown[0];
+
+    page.hover(s.x, s.y);
+    page.tick();
+    assert.equal(page.label().hidden, false, 'the star was not named');
+    assert.equal(page.label().textContent, labelFor(s));
+
+    // A blank cell nearby names nothing. Find one that really is blank.
+    const taken = new Set(sky.cells.map((c) => c.x + ':' + c.y));
+    let blank = null;
+    for (let dx = 1; dx < 20 && !blank; dx++) {
+        if (!taken.has((s.x + dx) + ':' + s.y)) blank = { x: s.x + dx, y: s.y };
+    }
+    assert.ok(blank, 'no blank cell found beside the star');
+    page.hover(blank.x, blank.y);
+    page.tick();
+    assert.equal(page.label().hidden, true, 'a blank cell was named');
+    assert.deepEqual(page.errors, []);
+});
+
+test('the cell boundary is the label boundary', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const s = isolatedStar(skyFor());
+    assert.ok(s, 'no isolated star to probe the cell edges with');
+
+    // Sweep the fraction rather than only probing the centre: a rounding
+    // error would be invisible at 0.5 and obvious at the edges.
+    [0.02, 0.5, 0.98].forEach((f) => {
+        page.hover(s.x, s.y, f, f);
+        page.tick();
+        assert.equal(page.label().hidden, false, `inside the cell at ${f}`);
+    });
+    [[-0.05, 0.5], [1.05, 0.5], [0.5, -0.05], [0.5, 1.05]].forEach(([fx, fy]) => {
+        page.hover(s.x, s.y, fx, fy);
+        page.tick();
+        assert.equal(page.label().hidden, true, `outside the cell at ${fx},${fy}`);
+    });
+    assert.deepEqual(page.errors, []);
+});
+
+test('a star hidden behind the moon or the cat is never named', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const sky = skyFor();
+    // The precondition, asserted: starCells returns a superset of what is
+    // painted, and this date must actually exercise that.
+    assert.ok(sky.dropped.length > 0, 'nothing was occluded — pick another instant');
+
+    // The biconditional over every star the sky module offered, so the test
+    // cannot pass by the feature being broken everywhere.
+    let named = 0;
+    sky.cells.forEach((s) => {
+        page.hover(s.x, s.y);
+        page.tick();
+        const shouldName = Scene.starVisible(s, sky.layout) && !!SkyMap.starLabel(s.index);
+        assert.equal(page.label().hidden, !shouldName,
+            `star ${s.index} at ${s.x},${s.y}: expected named=${shouldName}`);
+        if (shouldName) named++;
+    });
+    assert.ok(named > 10, `only ${named} stars were named`);
+    assert.deepEqual(page.errors, []);
+});
+
+test('the label is chrome: it never touches a cell of the scene', () => {
+    const page = hoverPage();
+    const before = page.text();
+    page.setNames(true);
+    const s = skyFor().shown[0];
+    page.hover(s.x, s.y);
+    page.tick();
+
+    assert.equal(page.label().hidden, false);
+    assert.equal(page.text(), before, 'naming a star redrew the scene');
+    // And it lives outside the <pre>, not in it.
+    assert.equal(page.byClass('star-name').length, 1);
+    const inPre = [];
+    (function walk(el) {
+        (el.children || []).forEach((c) => {
+            if (String(c.className).indexOf('star-name') >= 0) inPre.push(c);
+            walk(c);
+        });
+    })(page.pre);
+    assert.deepEqual(inPre, []);
+});
+
+test('turning star names off clears the label without waiting for a move', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const s = skyFor().shown[0];
+    page.hover(s.x, s.y);
+    page.tick();
+    assert.equal(page.label().hidden, false);
+
+    const hash = page.hash();
+    page.setNames(false);
+    assert.equal(page.label().hidden, true, 'the label survived being switched off');
+    // A display preference is not a vantage: it must never reach the URL.
+    assert.equal(page.hash(), hash);
+    assert.deepEqual(page.errors, []);
+});
+
+test('the panel toggle drives the names, and writes no fragment', () => {
+    const page = hoverPage();
+    const hash = page.hash();
+    page.gear().click();
+    assert.equal(page.toggle().textContent, '( )');
+
+    page.toggle().click();
+    page.tick();
+    assert.equal(page.toggle().textContent, '(x)', 'the mark did not move');
+    const s = skyFor().shown[0];
+    page.hover(s.x, s.y);
+    page.tick();
+    assert.equal(page.label().textContent, labelFor(s));
+
+    page.toggle().click();
+    page.tick();
+    assert.equal(page.toggle().textContent, '( )');
+    assert.equal(page.label().hidden, true);
+    assert.equal(page.hash(), hash, 'the toggle wrote to the URL');
+    assert.deepEqual(page.errors, []);
+});
+
+test('leaving the scene hides the label', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const s = skyFor().shown[0];
+    page.hover(s.x, s.y);
+    page.tick();
+    assert.equal(page.label().hidden, false);
+    page.leave();
+    assert.equal(page.label().hidden, true);
+});
+
+test('star names survive the reduced-motion flip', () => {
+    // Regression guard: the hover has no animation, so gating it on motionGen
+    // would take names away from people who asked for less movement.
+    const page = hoverPage({ reducedMotion: true });
+    page.setNames(true);
+    const s = skyFor().shown[0];
+    page.hover(s.x, s.y);
+    page.tick();
+    assert.equal(page.label().hidden, false, 'reduced motion suppressed the name');
+    assert.equal(page.label().textContent, labelFor(s));
+
+    page.setReducedMotion(false);
+    page.tick();
+    page.hover(s.x, s.y);
+    page.tick();
+    assert.equal(page.label().hidden, false);
+});
+
+test('a pointer that cannot hover never names anything', () => {
+    const page = hoverPage({ hover: false });
+    page.setNames(true);
+    const s = skyFor().shown[0];
+    page.hover(s.x, s.y);
+    page.tick();
+    // A tap synthesises one mousemove and never a mouseleave, so a label lit
+    // here would stay lit forever.
+    assert.equal(page.label().hidden, true);
+});
+
+test('the label flips rather than running off the right edge', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const sky = skyFor();
+    // A wide label, and the rightmost named star.
+    const s = sky.shown.reduce((a, b) => (b.x > a.x ? b : a));
+    page.label().rect = { left: 0, top: 0, right: 300, bottom: 12, width: 300, height: 12, x: 0, y: 0 };
+    page.hover(s.x, s.y);
+    page.tick();
+
+    const left = parseFloat(page.label().style.left);
+    assert.ok(left >= 0, `label left ${left} is off the left edge`);
+    assert.ok(left + 300 <= HOVER_W, `label right ${left + 300} exceeds ${HOVER_W}`);
+});
+
+test('a resize re-aims the hover at the cell now under the cursor', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const s = skyFor().shown[0];
+    page.hover(s.x, s.y);
+    page.tick();
+    const first = page.label().textContent;
+    assert.ok(first.length > 0);
+
+    // The pixel the cursor is actually sitting on, before anything moves.
+    const pixel = page.pointAt(s.x, s.y);
+
+    // A materially different grid. The cell under that pixel changes, and
+    // metrics captured once at load would now map it to the wrong one.
+    page.resize(1100, 780);
+    page.tick();
+    const afterResize = page.label().textContent;
+    const hiddenAfterResize = page.label().hidden;
+
+    // The resize re-aimed the hover on its own. Re-dispatching the very same
+    // pixel must agree with what it computed — if it did not, the metrics the
+    // resize used and the metrics a move uses have drifted apart.
+    page.pre.dispatch('mousemove', pixel);
+    page.tick();
+    assert.equal(page.label().hidden, hiddenAfterResize);
+    assert.equal(page.label().textContent, afterResize);
+    assert.deepEqual(page.errors, []);
+});
+
+test('the name is never written across the moon or the cat', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const sky = skyFor();
+    const H = 14;
+
+    // Pixel boxes for the two things the label must keep off.
+    const r0 = page.rect();
+    const charW = parseFloat(page.pre.style.fontSize) * 0.6;
+    const lineH = parseFloat(page.pre.style.lineHeight);
+    const boxes = [sky.layout.moonBox, sky.layout.catBox].map((b) => ({
+        x0: r0.left + b.left * charW, x1: r0.left + (b.right + 1) * charW,
+        y0: r0.top + b.top * lineH, y1: r0.top + (b.bottom + 1) * lineH
+    }));
+    const hits = (x, y, w) => boxes.some((b) =>
+        x < b.x1 && x + w > b.x0 && y < b.y1 && y + H > b.y0);
+    // Where main.js would put the label if nothing were in the way.
+    const defaultAt = (s) => ({
+        x: r0.left + (s.x + 1) * charW + 10,
+        y: r0.top + (s.y + 1) * lineH + 6
+    });
+    const setWidth = (w) => {
+        page.label().rect =
+            { left: 0, top: 0, right: w, bottom: H, width: w, height: H, x: 0, y: 0 };
+    };
+
+    /*
+     * Whether a real star happens to sit close enough to the moon depends on
+     * the date, so the case is constructed rather than hoped for: take the
+     * star lying left of the moon on the moon's own rows, and give it a label
+     * just long enough to reach. Otherwise this test would quietly stop
+     * exercising the flip the next time the sky moved.
+     */
+    const moon = boxes[0];
+    let target = null, reach = 0;
+    sky.shown.forEach((s) => {
+        const d = defaultAt(s);
+        if (d.y + H <= moon.y0 || d.y >= moon.y1) return;   // not on its rows
+        if (d.x >= moon.x0) return;                          // already past it
+        const need = moon.x0 - d.x + 60;
+        if (!target || need < reach) { target = s; reach = need; }
+    });
+    assert.ok(target, 'no star lies left of the moon on its rows');
+
+    setWidth(reach);
+    const d = defaultAt(target);
+    assert.ok(hits(d.x, d.y, reach), 'the constructed label would not have hit the moon');
+    page.hover(target.x, target.y);
+    page.tick();
+    assert.ok(!hits(parseFloat(page.label().style.left),
+                    parseFloat(page.label().style.top), reach),
+        'the label was written across the moon');
+
+    // And at a realistic width, no star anywhere lands on either subject.
+    const W = 170;
+    setWidth(W);
+    sky.shown.forEach((s) => {
+        page.hover(s.x, s.y);
+        page.tick();
+        assert.equal(page.label().hidden, false, `star at ${s.x},${s.y} was not named`);
+        const x = parseFloat(page.label().style.left);
+        const y = parseFloat(page.label().style.top);
+        assert.ok(!hits(x, y, W),
+            `the label for the star at ${s.x},${s.y} lies across the moon or the cat`);
+        assert.ok(x >= 0 && x + W <= HOVER_W, `label off the side at ${x}`);
+    });
     assert.deepEqual(page.errors, []);
 });

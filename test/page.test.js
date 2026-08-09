@@ -142,15 +142,63 @@ test('every class the menu can wear is styled in css/style.css', () => {
     // which is the single source of truth for what the panel wears.
     const used = new Set(['menu', 'menu-gear']);
     Menu.ROSE.forEach((dir) => {
-        Menu.rows({ lat: '41.39', lon: '2.17', dir }).forEach((row) => {
-            row.forEach((seg) => {
-                if (seg.cls) seg.cls.split(' ').forEach((c) => used.add(c));
+        // BOTH toggle states: the marked class is only ever emitted by one of
+        // them, so building rows one way would let .menu-toggle-on ship
+        // unstyled with nothing failing.
+        [{}, { name: true }].forEach((settings) => {
+            Menu.rows({ lat: '41.39', lon: '2.17', dir }, settings).forEach((row) => {
+                row.forEach((seg) => {
+                    if (seg.cls) seg.cls.split(' ').forEach((c) => used.add(c));
+                });
             });
         });
     });
     used.forEach((cls) => {
         assert.ok(defined.has(cls), `class .${cls} is worn by the menu but never styled`);
     });
+});
+
+test('the hover label is styled, and can be hidden', () => {
+    // main.js wears this one, and no test walks main.js for classes, so it
+    // would otherwise be the one piece of chrome with no coverage at all.
+    const css = readFile('css/style.css');
+    assert.match(css, /\.star-name\s*\{/, '.star-name is never styled');
+    assert.match(css, /\.star-name\[hidden\]/,
+        '.star-name must declare its own [hidden] rule — it sets no display, ' +
+        'and a bare [hidden] is only a UA rule');
+    assert.match(css, /pointer-events:\s*none/,
+        'the label must not be a hit target, or it swallows the mousemove ' +
+        'that positions it and flickers itself away');
+});
+
+test('main.js and menu.js agree on the settings event name', () => {
+    // Duplicated across the load-order boundary on purpose (main.js runs
+    // first), so nothing but a test keeps the two spellings together. A typo
+    // here leaves the toggle inert on the live page with every unit test green.
+    const nameIn = (rel) => {
+        const m = /SETTINGS_EVENT = '([^']+)'|HOVER_EVENT = '([^']+)'/.exec(readFile(rel));
+        assert.ok(m, `no settings event literal found in ${rel}`);
+        return m[1] || m[2];
+    };
+    assert.equal(nameIn('js/main.js'), nameIn('js/menu.js'));
+});
+
+test('every transition is cancelled under prefers-reduced-motion', () => {
+    const css = readFile('css/style.css');
+    const reduced = /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n    \}/.exec(css);
+    assert.ok(reduced, 'no reduced-motion block found');
+    // Any selector that fades has to be listed there; the block guards
+    // `animation` and `transition` separately and has been missed once before.
+    const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    [...stripped.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+        .filter((m) => /transition:\s*(?!none)/.test(m[2]))
+        .forEach((m) => {
+            m[1].trim().split(',').forEach((sel) => {
+                const cls = sel.trim().replace(/:.*$/, '');
+                assert.ok(reduced[1].includes(cls),
+                    `${cls} declares a transition but is not cancelled under reduced motion`);
+            });
+        });
 });
 
 test('the marked compass letter outranks the label brown by source order', () => {
@@ -161,6 +209,8 @@ test('the marked compass letter outranks the label brown by source order', () =>
     assert.ok(css.indexOf('.menu-dir-on') > css.indexOf('.menu-label'),
         '.menu-dir-on must be declared after .menu-label or the marked ' +
         'direction loses the cat\'s white');
+    assert.ok(css.indexOf('.menu-toggle-on') > css.indexOf('.menu-label'),
+        '.menu-toggle-on must be declared after .menu-label for the same reason');
 });
 
 test('the menu is chrome only: no timing, no randomness, no innerHTML', () => {

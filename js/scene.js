@@ -471,6 +471,21 @@
                inBoxWithHalo(L.fenceBox, x, y);
     }
 
+    /*
+     * Is a supplied star actually drawn? SkyMap.starCells() output is a
+     * SUPERSET of what lands on screen — anything off the grid or inside the
+     * moon, cat or fence halo is dropped. buildScene runs this as its own
+     * test, and main.js runs the same one to decide whether a hovered cell
+     * holds a star it can name. A second copy of the rule over there would
+     * drift silently: nothing would fail, a few stars would just be named
+     * while not being on the page. occupied() stays private — callers need
+     * the answer, not the halo rule.
+     */
+    function starVisible(s, L) {
+        return !!s && s.x >= 0 && s.x < L.cols && s.y >= 0 && s.y < L.rows &&
+            !occupied(s.x, s.y, L);
+    }
+
     // Merge a row of {char, cls} cells into runs, trimming trailing spaces
     // (a space renders the same whether it's inside a classed span or not,
     // so trimming regardless of class keeps output small without changing
@@ -545,9 +560,7 @@
         // Both paths obey occupied(): never on the moon, cat or fence halos.
         if (opts.stars) {
             opts.stars.forEach(function (s) {
-                if (!s) return;
-                if (s.x < 0 || s.x >= cols || s.y < 0 || s.y >= rows) return;
-                if (occupied(s.x, s.y, L)) return;
+                if (!starVisible(s, L)) return;
                 set(s.x, s.y, s.char, s.cls);
             });
         } else {
@@ -778,6 +791,7 @@
         tailPose: tailPose,
         meteorCells: meteorCells,
         meteorAlive: meteorAlive,
+        starVisible: starVisible,
         fireflyCell: fireflyCell,
         fenceRowText: fenceRowText,
         layout: layout,

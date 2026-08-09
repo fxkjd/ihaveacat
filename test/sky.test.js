@@ -223,6 +223,84 @@ test('formatView tolerates garbage the way parseView does', () => {
     });
 });
 
+// ---- Star names ----------------------------------------------------------
+
+test('every star bright enough to be drawn has a name', () => {
+    // The guard that lets the table stop at SKY_MAG_LIMIT instead of covering
+    // all 1,637: raising the density knob fails here rather than silently
+    // producing anonymous stars.
+    let checked = 0;
+    for (let s = 0; s * 3 < SkyMap.CATALOG.length; s++) {
+        if (SkyMap.CATALOG[s * 3 + 2] > SkyMap.SKY_MAG_LIMIT) break;
+        const label = SkyMap.starLabel(s);
+        assert.ok(label, `star ${s} has no label`);
+        assert.ok(label.name.length > 0, `star ${s} has an empty name`);
+        // A catalogue number appears only where the label is not really a
+        // name, so it must never sit beside one or merely repeat it.
+        if (label.id) {
+            assert.match(label.id, /^(HD|HIP|HR|Gl) \S+$/, `star ${s}: ${label.id}`);
+            assert.notEqual(label.id, label.name, `star ${s} repeats its name`);
+            assert.match(label.name, /^[A-Z][a-z]+(-\d)? [A-Z]|^\d+ [A-Z]/,
+                `star ${s} has a real name but still carries ${label.id}`);
+        }
+        checked++;
+    }
+    assert.equal(checked, 343);
+});
+
+test('the names line up with the catalogue', () => {
+    // Pinned to published values, not to our own output: the catalogue is
+    // sorted brightest-first, so these are the five brightest stars in the
+    // sky in order. An array off by one is the failure that ships silently.
+    // A star with a traditional name carries that and nothing else.
+    assert.deepEqual(SkyMap.starLabel(0), { name: 'Sirius', id: '' });
+    assert.deepEqual(SkyMap.starLabel(1), { name: 'Canopus', id: '' });
+    assert.deepEqual(SkyMap.starLabel(2), { name: 'Arcturus', id: '' });
+    assert.deepEqual(SkyMap.starLabel(3), { name: 'Rigil Kentaurus', id: '' });
+    assert.deepEqual(SkyMap.starLabel(4), { name: 'Vega', id: '' });
+
+    // A designation is not a name, so it gets a number to look up. Spelled
+    // out, so a regeneration cannot quietly switch to shorthand like 'Alp Lup'.
+    assert.deepEqual(SkyMap.starLabel(79), { name: 'Alpha Lupi', id: 'HD 129056' });
+    assert.deepEqual(SkyMap.starLabel(35), { name: 'Gamma-2 Velorum', id: 'HD 68273' });
+
+    // And a star whose only name IS a catalogue number shows it once.
+    assert.deepEqual(SkyMap.starLabel(207), { name: 'HD 82668', id: '' });
+});
+
+test('starLabel never throws, whatever it is handed', () => {
+    [-1, 1e6, NaN, undefined, null, 'x', 1.5].forEach((i) => {
+        assert.doesNotThrow(() => SkyMap.starLabel(i), String(i));
+        assert.equal(SkyMap.starLabel(i), undefined, String(i));
+    });
+});
+
+test('starCells carries a stable catalogue index', () => {
+    const cells = SkyMap.starCells({ ...VIEW, cols: 140, skyRows: 37 });
+    const seen = new Set();
+    cells.forEach((s) => {
+        assert.ok(Number.isInteger(s.index) && s.index >= 0, `bad index ${s.index}`);
+        assert.ok(s.index * 3 < SkyMap.CATALOG.length);
+        assert.ok(!seen.has(s.index), 'the same star was emitted twice');
+        seen.add(s.index);
+        // The index must point back at a star of the brightness this glyph says.
+        const mag = SkyMap.CATALOG[s.index * 3 + 2];
+        const glyph = mag <= SkyMap.SKY_BRIGHT_MAG ? '*'
+            : (mag <= SkyMap.SKY_MID_MAG ? '\'' : '.');
+        assert.equal(s.char, glyph, `index ${s.index} disagrees with its glyph`);
+    });
+
+    // The same star keeps its index from a different place and time.
+    const later = SkyMap.starCells({
+        ...VIEW, date: new Date('2026-02-14T03:00:00Z'), lat: -33.87, lon: 151.21,
+        cols: 140, skyRows: 37
+    });
+    const byIndex = new Map(later.map((s) => [s.index, s]));
+    let shared = 0;
+    cells.forEach((s) => { if (byIndex.has(s.index)) shared++; });
+    assert.ok(shared > 0, 'no star was visible from both vantage points');
+});
+
 // ---- Purity, like scene.js -----------------------------------------------
 
 test('js/sky.js stays pure: no clock, no randomness, no DOM', () => {

@@ -46,6 +46,13 @@
     var moonRows = MoonPhase.renderMoonRows(MoonPhase.phaseIndex(loadedAt));
 
     var last = { cols: -1, rows: -1 };
+    /*
+     * The cell size the grid was last fitted with. Hoisted out of render()
+     * because the hover lookup needs it: getBoundingClientRect gives the
+     * <pre>'s origin but not these — it is a full-width block, so its box
+     * width is the container's, not cols * charW.
+     */
+    var charWpx = 0, lineHpx = 0;
 
     /*
      * The real sky, when js/sky.js is present; otherwise skyStars stays null
@@ -170,14 +177,209 @@
 
         pre.style.marginLeft = Math.max(0, (vp.w - grid.cols * charW) / 2) + 'px';
 
-        if (grid.cols === last.cols && grid.rows === last.rows) return;
-        last = grid;
+        charWpx = charW;
+        lineHpx = f.lineHeightPx;
 
-        // Same frozen instant, new window: the sky is recomputed so a wider
-        // grid reveals more of it at the edges without moving what is shown.
-        computeStars();
-        paint(buildFrame());
+        /*
+         * Deliberately a condition rather than an early return. Everything
+         * above must run on every resize, and anything added below must run
+         * too — an early return here once meant the hoisted metrics went stale
+         * whenever a resize kept the same cell count.
+         */
+        if (grid.cols !== last.cols || grid.rows !== last.rows) {
+            last = grid;
+            // Same frozen instant, new window: the sky is recomputed so a wider
+            // grid reveals more of it at the edges without moving what is shown.
+            computeStars();
+            buildHoverNames();
+            paint(buildFrame());
+        }
+        // A stationary cursor covers a different cell after a resize.
+        updateHover();
     }
+
+    /* ---- star names on hover ---------------------------------------------
+     * Off by default. js/menu.js announces the setting on window — the
+     * analogue of the address bar announcing a vantage change — so neither
+     * file names the other.
+     *
+     * The hit test is geometric rather than a listener per star, and has to
+     * be: the sky is painted as merged runs, so two adjacent stars sharing a
+     * twinkle class are a single <span> with nothing to attach to.
+     */
+    var HOVER_EVENT = 'settingschange';        // must match js/menu.js
+    var LABEL_DX = 10, LABEL_DY = 6, LABEL_PAD = 6;
+
+    var label = document.createElement('span');
+    label.className = 'star-name';
+    label.hidden = true;
+    // Mouse-only by nature. A live region reading names out as the pointer
+    // drifts across the sky would be worse than silence.
+    label.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(label);
+
+    var hoverOn = false;
+    var hoverNames = null;     // 'x:y' -> { name, id }, painted stars only
+    var hoverBoxes = null;     // what the label must not be written across
+    var hoverKey = null;       // the cell the label currently describes
+    var ptrX = 0, ptrY = 0, ptrIn = false, ptrQueued = false;
+    var hoverQuery = window.matchMedia ? window.matchMedia('(hover: hover)') : null;
+
+    /*
+     * Keyed by cell, holding the resolved label rather than the star index, so
+     * the hover path is one property read and an unnamed star never enters the
+     * map at all. Built from Scene.starVisible — the very predicate buildScene
+     * uses — so it cannot name a star that is not on the page; starCells()
+     * output is a superset, since anything in the moon, cat or fence halo is
+     * dropped. Rebuilt only where the sky can change, never per frame.
+     */
+    function buildHoverNames() {
+        hoverNames = null;
+        hoverBoxes = null;
+        if (!hasSky || !skyStars || !(last.cols > 0) || !SkyMap.starLabel) return;
+        var L = Scene.layout(last.cols, last.rows);
+        // Cached with the names rather than re-derived per frame: both only
+        // change when the grid does.
+        hoverBoxes = [L.moonBox, L.catBox];
+        var found = {};
+        skyStars.forEach(function (s) {
+            if (!Scene.starVisible(s, L)) return;
+            var lab = SkyMap.starLabel(s.index);
+            if (lab) found[s.x + ':' + s.y] = lab;
+        });
+        hoverNames = found;
+    }
+
+    function hideLabel() {
+        hoverKey = null;
+        label.hidden = true;
+    }
+
+    // Does a label placed here lie across the moon or the cat?
+    function coversSubject(x, y, w, h, r) {
+        if (!hoverBoxes) return false;
+        for (var i = 0; i < hoverBoxes.length; i++) {
+            var b = hoverBoxes[i];
+            if (x < r.left + (b.right + 1) * charWpx &&
+                x + w > r.left + b.left * charWpx &&
+                y < r.top + (b.bottom + 1) * lineHpx &&
+                y + h > r.top + b.top * lineHpx) return true;
+        }
+        return false;
+    }
+
+    /*
+     * Below and right of the cell by preference, so the cursor never covers
+     * the glyph being named — then left, then above, taking the first
+     * placement that is both on screen and clear of the moon and the cat.
+     *
+     * Those two are the subject of the picture: a name written across them
+     * reads as damage rather than as a label, and hiding the overlapping part
+     * would be worse still. Flipping is the same move the right-hand edge
+     * already asked for, so the edge and the subjects share one rule.
+     */
+    function placeLabel(col, row, r) {
+        // Measured, not reserved: names run from 'Vega' to the likes of
+        // 'Gamma Trianguli Australis'.
+        var box = label.getBoundingClientRect();
+        var w = box.width, h = box.height || lineHpx;
+        var vw = document.documentElement.clientWidth;
+        var vh = document.documentElement.clientHeight;
+        var rightX = r.left + (col + 1) * charWpx + LABEL_DX;
+        var leftX = r.left + col * charWpx - LABEL_DX - w;
+        var belowY = r.top + (row + 1) * lineHpx + LABEL_DY;
+        var aboveY = r.top + row * lineHpx - LABEL_DY - h;
+        var tries = [
+            [rightX, belowY], [leftX, belowY], [rightX, aboveY], [leftX, aboveY]
+        ];
+        var best = null;
+        for (var i = 0; i < tries.length && !best; i++) {
+            var x = tries[i][0], y = tries[i][1];
+            if (x < LABEL_PAD || x + w > vw - LABEL_PAD) continue;
+            if (y < LABEL_PAD || y + h > vh - LABEL_PAD) continue;
+            if (coversSubject(x, y, w, h, r)) continue;
+            best = tries[i];
+        }
+        // Nowhere clear: stay on screen and accept the overlap rather than
+        // disappear, which would read as the feature being broken.
+        if (!best) {
+            best = [Math.max(LABEL_PAD, Math.min(rightX, vw - LABEL_PAD - w)), belowY];
+        }
+        label.style.left = best[0] + 'px';
+        label.style.top = best[1] + 'px';
+    }
+
+    function updateHover() {
+        if (!hoverOn || !ptrIn || !hoverNames || !(charWpx > 0 && lineHpx > 0)) {
+            hideLabel();
+            return;
+        }
+        // Read fresh every flush: the rect folds in marginLeft and the
+        // wrapper's bottom anchoring, and caching it would buy an
+        // invalidation protocol that has to know about resize, zoom and DPR.
+        var r = pre.getBoundingClientRect();
+        var col = Math.floor((ptrX - r.left) / charWpx);
+        var row = Math.floor((ptrY - r.top) / lineHpx);
+        var inGrid = col >= 0 && col < last.cols && row >= 0 && row < last.rows;
+        var key = col + ':' + row;
+        var star = inGrid ? hoverNames[key] : null;
+        if (!star) {
+            hideLabel();
+            return;
+        }
+        // Identity separately from placement, so the DOM write happens only
+        // when the cell actually changes.
+        if (key !== hoverKey) {
+            hoverKey = key;
+            label.textContent = star.id ? star.name + '  ' + star.id : star.name;
+            label.hidden = false;
+        }
+        placeLabel(col, row, r);
+    }
+
+    function onMove(e) {
+        // Gated first, so with the feature off — the default — a mousemove
+        // costs one comparison and never reaches the frame clock.
+        if (!hoverOn) return;
+        // Checked live, like the reduced-motion query. A tap synthesises one
+        // mousemove and no mouseleave ever follows it, so without this a
+        // touch device would light a label and keep it lit.
+        if (hoverQuery && !hoverQuery.matches) return;
+        ptrX = e.clientX;
+        ptrY = e.clientY;
+        ptrIn = true;
+        if (ptrQueued) return;
+        ptrQueued = true;
+        requestAnimationFrame(function () {
+            ptrQueued = false;
+            updateHover();
+        });
+    }
+
+    pre.addEventListener('mousemove', onMove);
+    // Leaving the scene covers moving onto the gear or the open panel too:
+    // the browser does that hit-testing, so nothing here needs to know the
+    // menu exists. A window-level listener would have gone on naming stars
+    // hidden behind it.
+    pre.addEventListener('mouseleave', function () {
+        ptrIn = false;
+        hideLabel();
+    });
+
+    /*
+     * Deliberately NOT wired to motionGen. The label does not animate, and
+     * gating it on reduced motion would take star names away from people who
+     * asked for less movement, not less information.
+     */
+    addEventListener(HOVER_EVENT, function (e) {
+        var on = !!(e && e.detail && e.detail.names);
+        if (on === hoverOn) return;
+        hoverOn = on;
+        if (!on) {
+            ptrIn = false;
+            hideLabel();
+        }
+    });
 
     /* ---- idle animations ------------------------------------------------
      * All timing and randomness lives here: js/scene.js stays pure, taking
@@ -412,7 +614,10 @@
         skyView = SkyMap.parseView(
             typeof location === 'object' && location ? location.hash : '');
         computeStars();
+        // Same cell under the cursor, different star in it.
+        buildHoverNames();
         redraw();
+        updateHover();
     });
     if (document.fonts && document.fonts.ready) {
         document.fonts.ready.then(render, function () {});

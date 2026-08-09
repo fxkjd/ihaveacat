@@ -245,6 +245,69 @@
 	color: white;
     }
     /*
+     * The settings toggles, mirroring the compass letters exactly: no `color`
+     * of their own (the off state carries .menu-label for the brown, and
+     * .menu-dir-on/.menu-toggle-on below win the marked one back to white),
+     * white-space: pre because a <button> does not inherit it, and the same
+     * vertical-only tap growth.
+     */
+    .menu-toggle {
+	position: relative;
+	font: inherit;
+	line-height: inherit;
+	white-space: pre;
+	background: none;
+	border: 0;
+	margin: 0;
+	padding: 0;
+	vertical-align: baseline;
+	cursor: pointer;
+	transition: color 0.2s ease;
+    }
+    .menu-toggle::after {
+	content: "";
+	position: absolute;
+	top: -0.7em;
+	right: 0;
+	bottom: -0.7em;
+	left: 0;
+    }
+    .menu-toggle:hover, .menu-toggle:focus-visible {
+	color: #F5F3C3;
+    }
+    .menu-toggle-on {
+	color: white;
+    }
+    /*
+     * The hovered star's name. A <span>, not a <div>: the bare `div` rule at
+     * the top of this file is the scene wrapper's layout — absolute, full
+     * width, pinned to the bottom — and would turn the label into a banner.
+     * Not a <pre> either, or the rules above would size it.
+     *
+     * It is chrome, so it sits outside <pre id="scene"> and its font size is
+     * clamped rather than scaling with the art. No transition: a label that
+     * follows the pointer must be instant, and having none is also what keeps
+     * this feature out of the reduced-motion block entirely.
+     */
+    .star-name {
+	position: fixed;
+	z-index: 3;
+	/* Never a hit target. A label that could take the pointer would swallow
+	   the very mousemove that positions it and flicker itself away. */
+	pointer-events: none;
+	white-space: nowrap;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace;
+	font-size: clamp(11px, 1.3vh, 15px);
+	line-height: 1;
+	color: #F5F3C3;
+	/* The gradient's own dark end, so the name stays legible over a bright
+	   patch of sky without painting a box behind it. */
+	text-shadow: 0 1px 3px #09203f, 0 0 2px #09203f;
+    }
+    .star-name[hidden] {
+	display: none;
+    }
+    /*
      * Only ever takes effect when JS hasn't run: main.js sets an inline
      * font-size, which outranks any stylesheet rule.
      */
@@ -284,7 +347,7 @@
 	}
 	/* This block only ever killed `animation`; the menu's hover fades are
 	   transitions, which it would otherwise leave running. */
-	.menu-gear, .menu-dir {
+	.menu-gear, .menu-dir, .menu-toggle {
 	    transition: none;
 	}
     }
