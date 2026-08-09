@@ -45,7 +45,10 @@ test('page stays file:// compatible and script order is correct', () => {
     assert.doesNotMatch(html, /(src|href)="\//, 'absolute path breaks file://');
 
     const order = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]);
-    assert.deepEqual(order, ['js/moon.js', 'js/sky.js', 'js/scene.js', 'js/main.js']);
+    // menu.js is last on purpose: it is chrome, and if it ever throws the
+    // scene has already painted.
+    assert.deepEqual(order,
+        ['js/moon.js', 'js/sky.js', 'js/scene.js', 'js/main.js', 'js/menu.js']);
 
     const refs = [
         ...order,
@@ -130,8 +133,48 @@ test('every class the scene can emit is styled in css/style.css', () => {
     });
 });
 
-test('scene.js, moon.js and sky.js expose their browser (non-CommonJS) global correctly', () => {
-    const globals = { 'js/scene.js': 'Scene', 'js/moon.js': 'MoonPhase', 'js/sky.js': 'SkyMap' };
+test('every class the menu can wear is styled in css/style.css', () => {
+    const css = readFile('css/style.css');
+    const defined = new Set([...css.matchAll(/\.([A-Za-z][-\w]*)/g)].map((m) => m[1]));
+
+    const Menu = require('../js/menu.js');
+    // The two container classes install() owns; the rest come out of rows(),
+    // which is the single source of truth for what the panel wears.
+    const used = new Set(['menu', 'menu-gear']);
+    Menu.ROSE.forEach((dir) => {
+        Menu.rows({ lat: '41.39', lon: '2.17', dir }).forEach((row) => {
+            row.forEach((seg) => {
+                if (seg.cls) seg.cls.split(' ').forEach((c) => used.add(c));
+            });
+        });
+    });
+    used.forEach((cls) => {
+        assert.ok(defined.has(cls), `class .${cls} is worn by the menu but never styled`);
+    });
+});
+
+test('the marked compass letter outranks the label brown by source order', () => {
+    // .menu-label and .menu-dir-on are both specificity 0,1,0, and an unmarked
+    // letter wears both. Only source order decides, so moving .menu-dir-on
+    // above .menu-label would silently flatten the marked state to brown.
+    const css = readFile('css/style.css');
+    assert.ok(css.indexOf('.menu-dir-on') > css.indexOf('.menu-label'),
+        '.menu-dir-on must be declared after .menu-label or the marked ' +
+        'direction loses the cat\'s white');
+});
+
+test('the menu is chrome only: no timing, no randomness, no innerHTML', () => {
+    const src = readFile('js/menu.js');
+    assert.doesNotMatch(src, /innerHTML/);
+    // All timing and randomness stays in main.js; the menu is event-driven.
+    assert.doesNotMatch(src, /setTimeout|setInterval|requestAnimationFrame|Math\.random/);
+});
+
+test('scene.js, moon.js, sky.js and menu.js expose their browser (non-CommonJS) global correctly', () => {
+    const globals = {
+        'js/scene.js': 'Scene', 'js/moon.js': 'MoonPhase',
+        'js/sky.js': 'SkyMap', 'js/menu.js': 'Menu'
+    };
     Object.keys(globals).forEach((rel) => {
         const src = readFile(rel);
         const sandbox = {};

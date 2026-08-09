@@ -30,17 +30,49 @@ function gridFor(w, h) {
     return Scene.fitGrid(w, h, 0.6 * f.fontPx, f.lineHeightPx);
 }
 
-function element(tag) {
+function element(tag, doc) {
     return {
         tagName: tag,
         children: [],
         style: {},
         className: '',
         textContent: '',
+        value: '',
+        hidden: false,
+        type: '',
+        ownerDocument: doc || null,
+        listeners: {},
         firstChild: null,
         parentNode: null,
         setAttribute() {},
-        addEventListener() {},
+        // Real listeners. These used to be a no-op, which is why no UI in this
+        // project was ever testable; main.js attaches none, so recording them
+        // changes nothing for the suites that came before.
+        addEventListener(type, fn) {
+            (this.listeners[type] = this.listeners[type] || []).push(fn);
+        },
+        // Enough of an event object for the code under test, and no more: the
+        // menu reads `key` and calls preventDefault, and nothing else.
+        dispatch(type, props) {
+            const ev = Object.assign({
+                type,
+                target: this,
+                defaultPrevented: false,
+                preventDefault() { this.defaultPrevented = true; }
+            }, props);
+            (this.listeners[type] || []).forEach((fn) => fn(ev));
+            return ev;
+        },
+        click() { return this.dispatch('click'); },
+        // Focusing one element blurs whatever held focus before it, which is
+        // the whole reason a commit-on-blur can be tested here at all.
+        focus() {
+            if (!this.ownerDocument) return;
+            const prev = this.ownerDocument.activeElement;
+            if (prev === this) return;
+            this.ownerDocument.activeElement = this;
+            if (prev) prev.dispatch('blur');
+        },
         appendChild(child) {
             // A real DOM moves a fragment's children into the parent and
             // leaves the fragment itself out of the tree. Without that, every
@@ -84,10 +116,36 @@ function loadPage(options) {
     // The reduced-motion media query, stateful so a test can flip it live.
     const media = { matches: !!opts.reducedMotion, handlers: [] };
 
+    let hash = opts.hash || '';
+    let hashChanges = 0;
+    function fireHashChange() {
+        hashChanges++;
+        (listeners.hashchange || []).forEach((fn) => {
+            try { fn(); } catch (e) { errors.push(e); }
+        });
+    }
+
     const win = {
         requestAnimationFrame(cb) { return frameQueue.push(cb); },
         setTimeout(fn, ms) { return timers.push({ fn, at: now + ms }); },
-        location: { hash: opts.hash || '' },
+        /*
+         * A real accessor, because the browser's own semantics are the thing
+         * most easily got wrong here: assigning the value it already holds
+         * fires NOTHING. Code that writes the hash and then waits for the
+         * event to refresh itself looks perfect against a stub that always
+         * fires, and freezes on the live page.
+         */
+        location: {
+            get hash() { return hash; },
+            set hash(v) {
+                const next = String(v);
+                const norm = next === '' || next.charAt(0) === '#' ? next : '#' + next;
+                if (norm === hash) return;
+                hash = norm;
+                // And it arrives as a task, not as part of the assignment.
+                timers.push({ fn: fireHashChange, at: now });
+            }
+        },
         addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
         matchMedia() {
             return {
@@ -98,11 +156,12 @@ function loadPage(options) {
         getComputedStyle() { return { fontFamily: 'monospace' }; },
         document: {
             getElementById(id) { return id === 'scene' ? pre : null; },
-            createElement: element,
+            createElement(tag) { return element(tag, this); },
             createTextNode(text) { return { nodeValue: text }; },
             createDocumentFragment() { return element('#fragment'); },
             documentElement: { clientWidth: 1400, clientHeight: 900 },
             body: element('body'),
+            activeElement: null,
             addEventListener() {}
         }
     };
@@ -112,7 +171,7 @@ function loadPage(options) {
     // Pin the context's Math.random before the scripts load — main.js draws
     // from it during startup, and a deterministic flight lets a test aim it.
     if (opts.random) vm.runInContext('Math', ctx).random = opts.random;
-    ['js/moon.js', 'js/sky.js', 'js/scene.js', 'js/main.js'].forEach((rel) => {
+    ['js/moon.js', 'js/sky.js', 'js/scene.js', 'js/main.js', 'js/menu.js'].forEach((rel) => {
         if (opts.withoutSky && rel === 'js/sky.js') return;
         vm.runInContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), ctx, { filename: rel });
     });
@@ -120,6 +179,37 @@ function loadPage(options) {
     return {
         pre,
         errors,
+        hash() { return hash; },
+        // How many hashchange events have actually fired, so a test can prove
+        // that a redundant write fires none.
+        hashChanges() { return hashChanges; },
+        // getElementById only ever answers 'scene', so the menu is reached by
+        // walking the body. A dozen hand-built nodes; a walk is enough.
+        byClass(cls) {
+            const out = [];
+            (function walk(el) {
+                (el.children || []).forEach((c) => {
+                    if (String(c.className).split(' ').indexOf(cls) >= 0) out.push(c);
+                    walk(c);
+                });
+            })(win.document.body);
+            return out;
+        },
+        gear() { return this.byClass('menu-gear')[0]; },
+        panel() { return this.byClass('menu')[0]; },
+        field(name) {
+            // lat then lon, in the order rows() lays them out.
+            return this.byClass('menu-field')[name === 'lat' ? 0 : 1];
+        },
+        dir(letter) {
+            return this.byClass('menu-dir')
+                .find((b) => b.textContent.replace(/[()\s]/g, '') === letter);
+        },
+        // What the panel currently reads, row by row.
+        menuText() {
+            return (this.panel().children || [])
+                .map((c) => c.textContent || c.nodeValue || '').join('');
+        },
         // One display frame at 60Hz. Returns how many animation frames ran.
         tick() {
             now += 1000 / 60;
@@ -162,12 +252,10 @@ function loadPage(options) {
                 try { fn(); } catch (e) { errors.push(e); }
             });
         },
-        // Edit the URL hash and fire hashchange, as the address bar would.
-        setHash(hash) {
-            win.location.hash = hash;
-            (listeners.hashchange || []).forEach((fn) => {
-                try { fn(); } catch (e) { errors.push(e); }
-            });
+        // Edit the URL hash as the address bar would — through the same setter
+        // the page itself writes to, so both share one set of semantics.
+        setHash(h) {
+            win.location.hash = h;
         }
     };
 }
@@ -438,5 +526,178 @@ test('prefers-reduced-motion at load means no firefly ever lights', () => {
         assert.equal(fireflyRows(page).length, 0,
             'a firefly lit despite prefers-reduced-motion');
     }
+    assert.deepEqual(page.errors, []);
+});
+
+// ---- The vantage panel ---------------------------------------------------
+
+// Sky text above the fence: what a vantage point actually changes.
+function skyOf(page) {
+    return page.text().split('\n').slice(0, 25).join('\n');
+}
+
+// Type into a field and commit the way a person does: Enter.
+function typeInto(page, name, value) {
+    const el = page.field(name);
+    el.focus();
+    el.value = value;
+    el.dispatch('keydown', { key: 'Enter' });
+}
+
+test('the gear toggles a panel that starts shut', () => {
+    const page = loadPage();
+    page.tick();
+    const gear = page.gear();
+    assert.ok(gear, 'no gear was installed');
+    assert.equal(gear.textContent, '⚙︎');
+    assert.equal(page.panel().hidden, true, 'the panel should start shut');
+
+    gear.click();
+    assert.equal(page.panel().hidden, false);
+    gear.click();
+    assert.equal(page.panel().hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('the panel opens reading the vantage the page is drawn from', () => {
+    const page = loadPage({ hash: '#lat=-33.87&lon=151.21&dir=n' });
+    page.tick();
+    page.gear().click();
+
+    assert.equal(page.field('lat').value, '-33.87');
+    assert.equal(page.field('lon').value, '151.21');
+    assert.equal(page.dir('n').textContent, '(n)');
+    ['e', 's', 'w'].forEach((d) => {
+        assert.equal(page.dir(d).textContent, ' ' + d + ' ', d);
+        assert.doesNotMatch(page.dir(d).className, /menu-dir-on/);
+    });
+    assert.match(page.dir('n').className, /menu-dir-on/);
+});
+
+test('committing the panel draws the sky that fragment draws', () => {
+    const page = loadPage();
+    page.tick();
+    const before = skyOf(page);
+    page.gear().click();
+
+    page.field('lon').value = '151.21';
+    typeInto(page, 'lat', '-33.87');
+    page.dir('n').click();
+    page.tick();
+
+    // The fragment is canonical and complete, so the URL is shareable alone.
+    assert.equal(page.hash(), '#lat=-33.87&lon=151.21&dir=n');
+    assert.notEqual(skyOf(page), before, 'the sky did not retune');
+
+    // And the whole point: the panel is a way of typing the fragment, and
+    // produces nothing that typing the fragment would not.
+    const direct = loadPage({ hash: '#lat=-33.87&lon=151.21&dir=n' });
+    direct.tick();
+    assert.equal(skyOf(page), skyOf(direct));
+    assert.deepEqual(page.errors, []);
+});
+
+test('a rejected coordinate moves neither the sky nor the fragment', () => {
+    const page = loadPage();
+    page.tick();
+    page.gear().click();
+    const sky = skyOf(page);
+    const hash = page.hash();
+
+    // Out of range, and plain nonsense. Both are typos, not requests.
+    ['999', '-91', 'abc', ''].forEach((bad) => {
+        typeInto(page, 'lat', bad);
+        page.tick();
+        assert.equal(page.hash(), hash, bad);
+        assert.equal(skyOf(page), sky, bad);
+        // The field snaps back to what the sky is actually drawn from.
+        assert.equal(page.field('lat').value, '41.39', bad);
+    });
+    assert.deepEqual(page.errors, []);
+});
+
+test('committing the same vantage twice fires no second hashchange', () => {
+    const page = loadPage();
+    page.tick();
+    page.gear().click();
+    typeInto(page, 'lat', '55.9');
+    page.tick();
+
+    const fired = page.hashChanges();
+    const sky = skyOf(page);
+    // The identical value, and a differently-spelled identical value.
+    typeInto(page, 'lat', '55.9');
+    page.tick();
+    typeInto(page, 'lat', '55.90');
+    page.tick();
+    page.dir('s').click();
+    page.tick();
+
+    assert.equal(page.hashChanges(), fired, 'a redundant write fired an event');
+    assert.equal(skyOf(page), sky);
+    assert.equal(page.field('lat').value, '55.9', 'the field should canonicalise');
+    assert.deepEqual(page.errors, []);
+});
+
+test('editing the fragment directly moves the panel with it', () => {
+    const page = loadPage();
+    page.tick();
+    page.gear().click();
+    page.setHash('#lat=-33.87&lon=151.21&dir=w');
+    page.tick();
+
+    assert.equal(page.field('lat').value, '-33.87');
+    assert.equal(page.field('lon').value, '151.21');
+    assert.equal(page.dir('w').textContent, '(w)');
+    // A garbage fragment shows the default view — what the page is drawing —
+    // rather than echoing the garbage back.
+    page.setHash('#lat=abc&dir=up');
+    page.tick();
+    assert.equal(page.field('lat').value, '41.39');
+    assert.deepEqual(page.errors, []);
+});
+
+test('Escape shuts the panel and abandons the half-typed value', () => {
+    const page = loadPage();
+    page.tick();
+    page.gear().click();
+    const hash = page.hash();
+
+    const lat = page.field('lat');
+    lat.focus();
+    lat.value = '-33.8';                       // mid-edit, never committed
+    lat.dispatch('keydown', { key: 'Escape' });
+    page.tick();
+
+    assert.equal(page.panel().hidden, true, 'Escape did not shut the panel');
+    // The blur that follows hiding the panel must not commit the abandoned
+    // value: close() restores the fields before it moves focus.
+    assert.equal(page.hash(), hash, 'Escape committed the abandoned edit');
+    assert.equal(page.field('lat').value, '41.39');
+    assert.deepEqual(page.errors, []);
+});
+
+test('the menu is chrome: it never touches a cell of the scene', () => {
+    const page = loadPage();
+    page.tick();
+    const scene = page.text();
+
+    page.gear().click();
+    assert.equal(page.text(), scene, 'opening the menu redrew the scene');
+    typeInto(page, 'lat', '41.39');            // the value it already holds
+    page.tick();
+    assert.equal(page.text(), scene, 'a no-op commit redrew the scene');
+    page.gear().click();
+    assert.equal(page.text(), scene, 'shutting the menu redrew the scene');
+    assert.deepEqual(page.errors, []);
+});
+
+test('without js/sky.js there is no gear at all', () => {
+    const page = loadPage({ withoutSky: true });
+    page.tick();
+    // No sky module, no vantage to set: a control that cannot do anything is
+    // worse than no control.
+    assert.equal(page.gear(), undefined);
+    assert.equal(page.panel(), undefined);
     assert.deepEqual(page.errors, []);
 });

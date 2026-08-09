@@ -62,6 +62,15 @@ All of the above are enforced by tests.
   Owns **all timing and randomness**. Each row is its own `<span>`, so an
   animation frame repaints only the rows that changed. If anything fails before
   the first paint, the static fallback is left alone.
+- `js/menu.js` — the vantage panel: a gear in the top-right that opens a small
+  ASCII readout for latitude, longitude and facing direction. Split like the
+  rest: `rows(fields)` is **pure** art over pre-formatted strings, in the same
+  `{text, cls}` shape `scene.js` emits (so `test/menu.test.js` pins the drawing
+  with no DOM at all); `install()` is the wiring. It writes the URL fragment and
+  **there is no wire to `main.js` on purpose** — the panel, the address bar, a
+  shared link and the Back button are then one code path, and the URL always
+  says what is drawn. It builds itself from script, so nothing appears on the
+  no-JS page that could not work.
 - `css/style.css` — site styling, the monospace stack with ligatures and kerning
   disabled (a coding font ligating `/\`, `=\`, `===` would break the character
   grid), and the `.fence`/`.lawn`/`.vine`/`.meteor`/star classes. The bare `pre`
@@ -74,8 +83,12 @@ All of the above are enforced by tests.
   sky.js purity.
 - `test/scene.test.js` — pins art fidelity byte-for-byte, sizing and layout
   sweeps, determinism and resize stability, placement, and the animations.
+- `test/menu.test.js` — pins the panel's art byte-for-byte and its column
+  alignment. Requiring the module in Node *is* the purity test: there is no
+  `document`, so `install()` never runs and `rows()` has to stand alone.
 - `test/page.test.js` — fallback drift, `file://`/script-order/case safety, CSP
-  cleanliness, CSS class coverage, and both UMD browser globals.
+  cleanliness, CSS class coverage for both the scene and the menu, and every
+  UMD browser global.
 - `test/browser.test.js` — **runs `main.js`** against a stub DOM and a stub
   frame clock, because the other suites only test the pure module and read
   `main.js` as text. Its clock deliberately starts at a large, page-load-relative
@@ -226,6 +239,44 @@ Rules:
   stops the chain, and without the reset a lit glow froze on screen (invisible
   to a byte-stillness assertion; `test/browser.test.js` checks the snuff
   explicitly).
+
+## Vantage panel
+
+The gear in the top-right corner opens the panel; it is shut on every load.
+`SkyMap.formatFields`/`formatView` are the inverse of `parseView` and live
+beside it, so the fragment's syntax is written down once and a round-trip test
+guards the pair. The panel displays *literally the strings it would write*, so
+what you read and what the URL says can never drift apart.
+
+- **The menu is chrome, not scenery.** It never paints into `<pre id="scene">`
+  (a test asserts the scene is byte-identical across open, commit and close),
+  its font size is **clamped** instead of scaling with the art — "no font-size
+  cap" is a rule about the *scene*, and chrome obeying it would be 60px on a 4K
+  window — and it owns no timers and no randomness; those stay in `main.js`.
+- **One fragment write per deliberate change** (Enter, blur, a compass click),
+  never per keystroke: each write is a history entry. A commit that does not
+  move the vantage writes **nothing at all**, not even to canonicalise the
+  spelling — otherwise opening the panel and leaving a field would stamp a
+  fragment onto a URL that never had one, and the blur that follows Escape
+  would commit the very edit Escape abandons. `close()` restores the fields
+  *before* it moves focus, for the same reason.
+- **Setting the fragment to the value it already holds fires no `hashchange`.**
+  The panel updates itself before writing and never waits for the event to come
+  back. The stub in `test/browser.test.js` models this faithfully — one that
+  always fired would let a regression pass green.
+- **Opening does not focus a field.** Grabbing focus raises the on-screen
+  keyboard over the scene on a phone, and it would leave `lat` permanently
+  mid-edit, which is exactly what `sync()` refuses to overwrite.
+- An out-of-range coordinate is **rejected, not clamped**: the field snaps back
+  to the value the sky is drawn from. `parseView`'s garbage→default rule is
+  right for a URL typed once and wrong for a field being edited.
+- The gear is U+2699 **plus U+FE0E**. Without the variation selector, iOS and
+  Android draw a full-colour emoji cog — the one thing on this page that could
+  look less like the rest of the drawing.
+- Every direction slot is three cells (`(s)` marked, ` s ` not), so clicking one
+  cannot shift the row, and the brackets carry the state with no colour at all.
+- No click-outside-to-close, no geolocation, no persistence, no presets: the
+  fragment *is* the state, and it is already shareable.
 
 ## Determinism
 
