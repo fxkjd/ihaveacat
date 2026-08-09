@@ -213,6 +213,31 @@ test('the marked compass letter outranks the label brown by source order', () =>
         '.menu-toggle-on must be declared after .menu-label for the same reason');
 });
 
+test('the menu box absorbs the buttons\' tap-target overhang', () => {
+    // The compass and toggle ::afters grow the touch targets past the line
+    // box, absolutely positioned inside the panel — and an abs-pos descendant
+    // counts toward a scroll container's scrollable overflow. .menu is one
+    // (overflow-y: auto is the too-tall-panel escape hatch), so unless the
+    // panel's bottom padding covers the overhang, the last row hangs out of
+    // the box and the panel wears a permanent scrollbar.
+    const css = readFile('css/style.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    const menu = /\.menu\s*\{([^{}]*)\}/.exec(css);
+    assert.ok(menu, 'no .menu rule found');
+    assert.match(menu[1], /overflow-y:\s*auto/,
+        'the panel must stay scrollable in case it outgrows the window');
+    const pad = /padding-bottom:\s*([\d.]+)em/.exec(menu[1]);
+    assert.ok(pad, '.menu declares no em-sized bottom padding');
+    const overhangs = [...css.matchAll(
+        /\.menu-(?:dir|toggle)::after\s*\{[^{}]*bottom:\s*-([\d.]+)em/g)];
+    assert.equal(overhangs.length, 2,
+        'expected one ::after overhang per button kind');
+    overhangs.forEach((m) => {
+        assert.ok(parseFloat(pad[1]) >= parseFloat(m[1]),
+            `.menu padding-bottom (${pad[1]}em) is smaller than a button's ` +
+            `tap-target overhang (${m[1]}em), which puts a scrollbar on the panel`);
+    });
+});
+
 test('the menu is chrome only: no timing, no randomness, no innerHTML', () => {
     const src = readFile('js/menu.js');
     assert.doesNotMatch(src, /innerHTML/);

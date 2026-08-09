@@ -156,6 +156,13 @@
 	   font size is the case that gets here. */
 	max-height: calc(100vh - 3.5rem);
 	overflow-y: auto;
+	/* The compass and toggle buttons grow their tap targets 0.7em past the
+	   line box with absolutely positioned ::afters, and an abs-pos descendant
+	   counts toward a scroll container's scrollable overflow: the last row's
+	   downward overhang hung past the panel's bottom edge and the overflow-y
+	   above answered it with a permanent scrollbar. The padding keeps the
+	   overhang inside the box; it must be at least the ::afters' 0.7em. */
+	padding-bottom: 0.7em;
     }
     /* Explicit, because `pre` above sets display: inline-block, which would
        otherwise beat the UA stylesheet's [hidden] rule and show a shut panel. */
