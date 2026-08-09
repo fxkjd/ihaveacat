@@ -174,6 +174,55 @@ test('parseView: defaults, per-field fallback, and garbage tolerance', () => {
     });
 });
 
+test('formatView is the inverse of parseView', () => {
+    assert.equal(SkyMap.formatView(SkyMap.DEFAULT_VIEW), '#lat=41.39&lon=2.17&dir=s');
+    assert.equal(SkyMap.formatView({ lat: -33.87, lon: 151.21, azimuth: 0 }),
+        '#lat=-33.87&lon=151.21&dir=n');
+    // The short spelling of each direction, never 'south'.
+    assert.equal(SkyMap.formatView({ lat: 0, lon: 0, azimuth: 90 }), '#lat=0&lon=0&dir=e');
+    // Round numbers keep no decimals they don't need.
+    assert.equal(SkyMap.formatView({ lat: 40, lon: -3.5, azimuth: 270 }),
+        '#lat=40&lon=-3.5&dir=w');
+    // Anything finer than a hundredth of a degree is a hundredth of a column
+    // of sky; it rounds, and the round trip is stable from then on.
+    assert.equal(SkyMap.formatView({ lat: 41.3891, lon: 2.1699, azimuth: 270 }),
+        '#lat=41.39&lon=2.17&dir=w');
+
+    // The property, swept: writing a vantage down and reading it back changes
+    // nothing. (-0 is left out on purpose — it formats to '0' and parses to
+    // +0, which deepEqual distinguishes.)
+    [-90, -89.99, -41.39, 0, 0.01, 55.95, 90].forEach((lat) => {
+        [-180, -151.21, -0.13, 0, 2.17, 179.99, 180].forEach((lon) => {
+            [0, 90, 180, 270].forEach((azimuth) => {
+                const v = { lat, lon, azimuth };
+                assert.deepEqual(SkyMap.parseView(SkyMap.formatView(v)), v);
+            });
+        });
+    });
+});
+
+test('formatView tolerates garbage the way parseView does', () => {
+    const BCN = '#lat=41.39&lon=2.17&dir=s';
+    assert.equal(SkyMap.formatView({}), BCN);
+    assert.equal(SkyMap.formatView(undefined), BCN);
+    // A non-cardinal azimuth is a typo too, not a request for the nearest
+    // quarter: the same rule that keeps parseView from clamping to a pole.
+    assert.equal(SkyMap.formatView({ lat: 1, lon: 2, azimuth: 45 }), '#lat=1&lon=2&dir=s');
+    [null, { lat: NaN, lon: 'x', azimuth: 'up' }, { lat: 200, lon: -999, azimuth: -1 },
+     { lat: Infinity, lon: 1e999, azimuth: 0 }
+    ].forEach((v) => {
+        assert.doesNotThrow(() => SkyMap.formatView(v), JSON.stringify(v));
+        assert.match(SkyMap.formatView(v),
+            /^#lat=-?\d+(\.\d{1,2})?&lon=-?\d+(\.\d{1,2})?&dir=[nesw]$/);
+    });
+    // The fixed point: formatting what was parsed is idempotent for ANY input,
+    // which is what canonicalising a hand-typed fragment relies on.
+    ['', '#', '#lat=abc&dir=up', '#LAT=41.4&DIR=North', '#%%%', '#lat=1e999'].forEach((h) => {
+        const once = SkyMap.formatView(SkyMap.parseView(h));
+        assert.equal(SkyMap.formatView(SkyMap.parseView(once)), once, h);
+    });
+});
+
 // ---- Purity, like scene.js -----------------------------------------------
 
 test('js/sky.js stays pure: no clock, no randomness, no DOM', () => {

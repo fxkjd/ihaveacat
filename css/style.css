@@ -90,6 +90,161 @@
 	color: #9aa25f;
     }
     /*
+     * The vantage panel. Built by js/menu.js and never present in index.html:
+     * with JS off the page is the static fallback, and a control that cannot
+     * do anything is worse than no control at all.
+     *
+     * Nothing here paints a background — the sky and its stars show through
+     * the panel. The labels and the unmarked compass letters take the fence's
+     * brown, because chrome has to sit at least as far back as the fence,
+     * which is already subordinate to the cat on purpose; the values and the
+     * marked letter take the cat's white.
+     */
+    .menu-gear {
+	position: fixed;
+	top: 0;
+	right: 0;
+	z-index: 2;
+	/* The padding is the corner inset AND a 44px tap target, free because
+	   the gear sits outside the character grid. */
+	min-width: 44px;
+	min-height: 44px;
+	margin: 0;
+	padding: 0.6rem 0.7rem;
+	border: 0;
+	background: none;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace;
+	font-size: 1.15rem;
+	line-height: 1;
+	color: #8a7259;
+	opacity: 0.55;
+	cursor: pointer;
+	transition: color 0.2s ease, opacity 0.2s ease;
+    }
+    /* Always visible: a gear that only appears on hover is invisible on touch. */
+    .menu-gear:hover, .menu-gear:focus-visible {
+	color: #F5F3C3;
+	opacity: 1;
+    }
+    .menu-gear:focus-visible {
+	outline: 1px solid #F5F3C3;
+	outline-offset: -2px;
+    }
+    /*
+     * A <pre>, so the monospace stack and the ligature/kerning kills come from
+     * the bare `pre` rule above: the panel is in the cat's own font without a
+     * second copy of the family list. 1.2 is Scene.LINE_HEIGHT_RATIO, so it
+     * sits on the same grid rhythm as the art.
+     *
+     * The font size is CLAMPED, unlike the art's. "No font-size cap" is a rule
+     * about the scene — chrome that scaled with it would be 60px on a 4K
+     * window. The clamp also outranks the `@media (max-width: 480px) pre` rule
+     * below, and `.menu` (0,1,0) beats `pre` (0,0,1) whatever the source order.
+     */
+    .menu {
+	position: fixed;
+	top: 2.6rem;
+	right: 0.5rem;
+	z-index: 2;
+	margin: 0;
+	padding: 0;
+	line-height: 1.2;
+	font-size: clamp(12px, 1.5vh, 17px);
+	/* Nothing on this page scrolls (html, body are overflow: hidden), so a
+	   panel taller than the window would be unreachable rather than merely
+	   clipped. The clamp should make this unreachable; a browser minimum
+	   font size is the case that gets here. */
+	max-height: calc(100vh - 3.5rem);
+	overflow-y: auto;
+    }
+    /* Explicit, because `pre` above sets display: inline-block, which would
+       otherwise beat the UA stylesheet's [hidden] rule and show a shut panel. */
+    .menu[hidden] {
+	display: none;
+    }
+    /*
+     * iOS Safari zooms the whole page when an input under 16px takes focus,
+     * and with overflow: hidden a zoomed page is awkward to get back.
+     */
+    @media (pointer: coarse) {
+	.menu {
+	    font-size: 17px;
+	}
+    }
+    .menu-label {
+	color: #8a7259;
+    }
+    /*
+     * An input stripped back to seven character cells. Width is set from
+     * menu.js in `ch` units, which in a monospace face is exactly one column,
+     * so the field is as wide as the ASCII brackets around it reserve. The
+     * rest removes the widget: an <input> inherits no font, and Firefox ships
+     * it a border and padding of its own.
+     */
+    .menu-field {
+	font: inherit;
+	line-height: inherit;
+	color: white;
+	text-align: right;
+	background: none;
+	border: 0;
+	margin: 0;
+	padding: 0;
+	/* Explicit, because some UA sheets align form controls to the middle,
+	   which would drop the value off the row's baseline. */
+	vertical-align: baseline;
+	caret-color: #F5F3C3;
+    }
+    /* A highlight block over exactly those columns, which reads as terminal
+       selection rather than a focus ring drawn around ASCII art. */
+    .menu-field:focus {
+	outline: none;
+	background-color: rgba(245, 243, 195, 0.14);
+    }
+    /*
+     * No `color` here on purpose: the marked letter inherits the panel's
+     * white, and the unmarked ones additionally carry .menu-label, which
+     * supplies the brown. Both are specificity 0,1,0, so a colour on this rule
+     * would win on source order and flatten the two states.
+     *
+     * white-space: pre because a <button> does not reliably inherit it, and
+     * ' n ' collapsing to 'n' would shift the row two columns per button.
+     */
+    .menu-dir {
+	position: relative;
+	font: inherit;
+	line-height: inherit;
+	white-space: pre;
+	background: none;
+	border: 0;
+	margin: 0;
+	padding: 0;
+	vertical-align: baseline;
+	cursor: pointer;
+	transition: color 0.2s ease;
+    }
+    /*
+     * A single line is a thin tap target, so the touch area grows upward and
+     * downward — but NOT sideways. The four letters are adjacent, so a
+     * horizontal overhang would put each one's hit area over its neighbour's,
+     * and the later sibling paints on top: 'w' would quietly swallow taps
+     * meant for 's'. Each slot is already three characters wide.
+     */
+    .menu-dir::after {
+	content: "";
+	position: absolute;
+	top: -0.7em;
+	right: 0;
+	bottom: -0.7em;
+	left: 0;
+    }
+    .menu-dir:hover, .menu-dir:focus-visible {
+	color: #F5F3C3;
+    }
+    .menu-dir-on {
+	color: white;
+    }
+    /*
      * Only ever takes effect when JS hasn't run: main.js sets an inline
      * font-size, which outranks any stylesheet rule.
      */
@@ -126,5 +281,10 @@
     @media (prefers-reduced-motion: reduce) {
 	.star, .star-1, .star-2, .star-3 {
 	    animation: none;
+	}
+	/* This block only ever killed `animation`; the menu's hover fades are
+	   transitions, which it would otherwise leave running. */
+	.menu-gear, .menu-dir {
+	    transition: none;
 	}
     }

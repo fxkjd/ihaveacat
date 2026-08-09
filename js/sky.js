@@ -281,6 +281,7 @@
     var DIRECTIONS = {
         n: 0, north: 0, e: 90, east: 90, s: 180, south: 180, w: 270, west: 270
     };
+    var LAT_LIMIT = 90, LON_LIMIT = 180;
 
     var DEG = Math.PI / 180;
     // Milliseconds between the Unix epoch and J2000.0 (2000-01-01 12:00 UT).
@@ -383,16 +384,72 @@
             var value = pair.slice(eq + 1);
             if (key === 'lat') {
                 var lat = parseFloat(value);
-                if (isFinite(lat) && lat >= -90 && lat <= 90) view.lat = lat;
+                if (isFinite(lat) && lat >= -LAT_LIMIT && lat <= LAT_LIMIT) view.lat = lat;
             } else if (key === 'lon') {
                 var lon = parseFloat(value);
-                if (isFinite(lon) && lon >= -180 && lon <= 180) view.lon = lon;
+                if (isFinite(lon) && lon >= -LON_LIMIT && lon <= LON_LIMIT) view.lon = lon;
             } else if (key === 'dir') {
                 var az = DIRECTIONS[value.toLowerCase()];
                 if (az !== undefined) view.azimuth = az;
             }
         });
         return view;
+    }
+
+    /*
+     * The shortest spelling of each azimuth, derived from DIRECTIONS rather
+     * than written out a second time: 180 comes back as 's', never 'south'.
+     */
+    var AZIMUTH_NAMES = (function () {
+        var out = {};
+        Object.keys(DIRECTIONS).forEach(function (name) {
+            var az = DIRECTIONS[name];
+            if (out[az] === undefined || name.length < out[az].length) out[az] = name;
+        });
+        return out;
+    })();
+
+    /*
+     * Two decimals is ~1.1 km on the ground and a hundredth of a column of sky
+     * (DEG_PER_COL is a whole degree), so nothing finer could ever show.
+     * Trailing zeros are trimmed, so a round latitude reads `0`, not `0.00`;
+     * rounding a negative sliver gives -0, which String() writes as '0'.
+     */
+    function formatDeg(value, limit, fallback) {
+        var n = typeof value === 'number' ? value : parseFloat(value);
+        if (!isFinite(n) || n < -limit || n > limit) n = fallback;
+        return String(Math.round(n * 100) / 100);
+    }
+
+    /*
+     * The three fields as the strings a fragment would spell them with — and
+     * the same strings a settings panel shows, so what is displayed and what
+     * is written down can never disagree.
+     *
+     * Each bad field falls back on its own, exactly as parseView treats one.
+     * An azimuth that is not one of the four cardinals falls back rather than
+     * snapping to the nearest quarter: the same reasoning that keeps parseView
+     * from clamping an out-of-range latitude to a pole nobody asked for.
+     */
+    function formatFields(view) {
+        var v = view || {};
+        var az = ((v.azimuth % 360) + 360) % 360;      // NaN for a missing one
+        return {
+            lat: formatDeg(v.lat, LAT_LIMIT, DEFAULT_VIEW.lat),
+            lon: formatDeg(v.lon, LON_LIMIT, DEFAULT_VIEW.lon),
+            dir: AZIMUTH_NAMES[az] || AZIMUTH_NAMES[DEFAULT_VIEW.azimuth]
+        };
+    }
+
+    /*
+     * The inverse of parseView: the fragment a vantage point would be written
+     * as, '#' included so a caller can hand it straight to the browser. All
+     * three fields, always — a partial fragment would not be shareable on its
+     * own, which is the whole reason the vantage lives in the fragment.
+     */
+    function formatView(view) {
+        var f = formatFields(view);
+        return '#lat=' + f.lat + '&lon=' + f.lon + '&dir=' + f.dir;
     }
 
     var SkyMap = {
@@ -403,10 +460,14 @@
         SKY_BRIGHT_MAG: SKY_BRIGHT_MAG,
         SKY_MID_MAG: SKY_MID_MAG,
         DEFAULT_VIEW: DEFAULT_VIEW,
+        LAT_LIMIT: LAT_LIMIT,
+        LON_LIMIT: LON_LIMIT,
         gmst: gmst,
         altAz: altAz,
         starCells: starCells,
-        parseView: parseView
+        parseView: parseView,
+        formatFields: formatFields,
+        formatView: formatView
     };
 
     if (typeof module !== 'undefined' && module.exports) {
