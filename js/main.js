@@ -62,8 +62,12 @@
      * DATE is never configurable, per the no-?date= owner rule.
      */
     var hasSky = typeof SkyMap !== 'undefined';
-    var skyView = hasSky ? SkyMap.parseView(
-        typeof location === 'object' && location ? location.hash : '') : null;
+
+    function currentHash() {
+        return typeof location === 'object' && location ? location.hash : '';
+    }
+
+    var skyView = hasSky ? SkyMap.parseView(currentHash()) : null;
     var skyStars = null;
 
     function computeStars() {
@@ -611,8 +615,7 @@
     // the frozen load instant is kept: only WHERE you look changes, not WHEN.
     addEventListener('hashchange', function () {
         if (!hasSky) return;
-        skyView = SkyMap.parseView(
-            typeof location === 'object' && location ? location.hash : '');
+        skyView = SkyMap.parseView(currentHash());
         computeStars();
         // Same cell under the cursor, different star in it.
         buildHoverNames();

@@ -800,6 +800,30 @@ test('growing the grid translates the star field instead of reshuffling it', () 
     });
 });
 
+test('growing the grid translates the vines, glyph for glyph', () => {
+    // Placement was always core-relative, but the leaf glyphs were once
+    // hashed on the SCREEN column, so every resize re-drew each climber with
+    // a different mix of leaves — a reshuffle, just a quieter one.
+    const vineCells = (cols) => {
+        const scene = Scene.buildScene({ cols, rows: 40 });
+        const L = scene.layout;
+        const map = new Map();
+        Scene.sceneToCells(scene).forEach((row, y) => row.forEach((cell, x) => {
+            if (cell.cls === 'vine') map.set((x - L.coreLeft) + ',' + y, cell.char);
+        }));
+        return map;
+    };
+    const base = vineCells(100);
+    assert.ok(base.size > 0, 'no vines on the base grid — the test proves nothing');
+    [102, 107, 130].forEach((cols) => {
+        const grown = vineCells(cols);
+        for (const [coord, char] of base) {
+            assert.equal(grown.get(coord), char,
+                `vine at ${coord} changed when growing to ${cols} cols`);
+        }
+    });
+});
+
 test('hash2 is well distributed and handles negative coordinates', () => {
     const buckets = new Array(8).fill(0);
     let n = 0;

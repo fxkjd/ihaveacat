@@ -473,10 +473,12 @@ test('a mid-flight resize cannot tunnel the meteor through the moon', () => {
     assert.ok(sawInk, 'the flight never showed after the resize — the scenario proves nothing');
 });
 
-test('the page shows the real sky, retuned live by the URL hash', () => {
-    // Sky text above the fence for comparison across vantage points.
-    const skyText = (page) => page.text().split('\n').slice(0, 25).join('\n');
+// Sky text above the fence: what a vantage point actually changes.
+function skyOf(page) {
+    return page.text().split('\n').slice(0, 25).join('\n');
+}
 
+test('the page shows the real sky, retuned live by the URL hash', () => {
     const bcn = loadPage();
     bcn.tick();
     assert.deepEqual(bcn.errors, []);
@@ -488,18 +490,18 @@ test('the page shows the real sky, retuned live by the URL hash', () => {
     const syd = loadPage({ hash: '#lat=-33.87&lon=151.21&dir=n' });
     syd.tick();
     assert.deepEqual(syd.errors, []);
-    assert.notEqual(skyText(syd), skyText(bcn),
+    assert.notEqual(skyOf(syd), skyOf(bcn),
         'the hash vantage point changed nothing');
 
     // Editing the hash retunes the view without a reload...
-    const before = skyText(bcn);
+    const before = skyOf(bcn);
     bcn.setHash('#dir=e');
     bcn.tick();
-    assert.notEqual(skyText(bcn), before, 'hashchange did not repaint the sky');
+    assert.notEqual(skyOf(bcn), before, 'hashchange did not repaint the sky');
     // ...and a garbage hash falls back to the default view, not a blank sky.
     bcn.setHash('#lat=abc&dir=up');
     bcn.tick();
-    assert.equal(skyText(bcn), before, 'garbage hash should mean the default view');
+    assert.equal(skyOf(bcn), before, 'garbage hash should mean the default view');
     assert.deepEqual(bcn.errors, []);
 });
 
@@ -613,11 +615,6 @@ test('prefers-reduced-motion at load means no firefly ever lights', () => {
 });
 
 // ---- The vantage panel ---------------------------------------------------
-
-// Sky text above the fence: what a vantage point actually changes.
-function skyOf(page) {
-    return page.text().split('\n').slice(0, 25).join('\n');
-}
 
 // Type into a field and commit the way a person does: Enter.
 function typeInto(page, name, value) {
@@ -737,6 +734,25 @@ test('editing the fragment directly moves the panel with it', () => {
     page.setHash('#lat=abc&dir=up');
     page.tick();
     assert.equal(page.field('lat').value, '41.39');
+    assert.deepEqual(page.errors, []);
+});
+
+test('Enter on a compass or toggle button is left to the browser', () => {
+    // On a <button>, Enter's default action IS the click: preventDefault on
+    // its keydown (the field handler's commit move) swallows the activation,
+    // leaving Enter dead for keyboard users while Space still works.
+    const page = loadPage();
+    page.tick();
+    page.gear().click();
+
+    const dirEv = page.dir('n').dispatch('keydown', { key: 'Enter' });
+    assert.equal(dirEv.defaultPrevented, false, 'Enter on a compass button was swallowed');
+    const togEv = page.toggle().dispatch('keydown', { key: 'Enter' });
+    assert.equal(togEv.defaultPrevented, false, 'Enter on a toggle button was swallowed');
+
+    // Escape from a button still shuts the panel.
+    page.dir('n').dispatch('keydown', { key: 'Escape' });
+    assert.equal(page.panel().hidden, true, 'Escape from a button did not shut the panel');
     assert.deepEqual(page.errors, []);
 });
 

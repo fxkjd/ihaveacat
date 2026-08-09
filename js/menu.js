@@ -231,6 +231,13 @@
             }
         }
 
+        // For the buttons only Escape is ours: on a <button>, Enter's default
+        // action IS the click, so the field handler's preventDefault would
+        // swallow the activation and leave Enter doing nothing.
+        function onButtonKey(e) {
+            if (e && e.key === 'Escape') close(true);
+        }
+
         function node(seg) {
             var el;
             if (seg.field) {
@@ -244,6 +251,10 @@
                 el.inputMode = 'decimal';
                 el.autocomplete = 'off';
                 el.spellcheck = false;
+                // The ' lat  [' text is a sibling span, not a <label>, so the
+                // input needs its own name — spelled out, like 'look n' is.
+                el.setAttribute('aria-label',
+                    seg.field === 'lat' ? 'latitude' : 'longitude');
                 // Exactly as many columns as the brackets reserve, applied
                 // through CSSOM: a style="" attribute is what the CSP blocks.
                 el.style.width = seg.cols + 'ch';
@@ -256,7 +267,7 @@
                 el.textContent = seg.text;
                 el.setAttribute('aria-label', 'look ' + seg.dir);
                 el.addEventListener('click', function () { setDir(seg.dir); });
-                el.addEventListener('keydown', onKey);
+                el.addEventListener('keydown', onButtonKey);
                 dirs[seg.dir] = el;
             } else if (seg.toggle) {
                 el = doc.createElement('button');
@@ -264,7 +275,7 @@
                 el.textContent = seg.text;
                 el.setAttribute('aria-label', 'star ' + seg.toggle + 's');
                 el.addEventListener('click', function () { setToggle(seg.toggle); });
-                el.addEventListener('keydown', onKey);
+                el.addEventListener('keydown', onButtonKey);
                 toggles[seg.toggle] = el;
             } else {
                 el = doc.createElement('span');
