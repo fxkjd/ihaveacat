@@ -46,7 +46,9 @@ All of the above are enforced by tests.
   CC BY-SA 4.0; 1,637 stars to magnitude 5.0, whole sphere, brightest-first)
   plus textbook sidereal-time and alt/az math (Meeus), a 1°-per-column /
   2°-per-row projection with the fence as the horizon, and `parseView` for the
-  URL hash. Pure like moon.js: the **date is an argument** — no clock, no
+  URL hash. It also carries `NAMES`/`IDS` — parallel to the catalog by index,
+  covering every star down to `SKY_MAG_LIMIT` — and `starLabel(index)`.
+  Pure like moon.js: the **date is an argument** — no clock, no
   randomness, no DOM (enforced by a test). The catalog is the map, not the
   view: seasons and hours come from the sidereal formula, and the data itself
   is good for decades (proper motion ~900 yr/cell; precession ~0.36° since
@@ -61,16 +63,20 @@ All of the above are enforced by tests.
   `<pre id="scene">` with `createElement`/`textContent` (never `innerHTML`).
   Owns **all timing and randomness**. Each row is its own `<span>`, so an
   animation frame repaints only the rows that changed. If anything fails before
-  the first paint, the static fallback is left alone.
-- `js/menu.js` — the vantage panel: a gear in the top-right that opens a small
-  ASCII readout for latitude, longitude and facing direction. Split like the
-  rest: `rows(fields)` is **pure** art over pre-formatted strings, in the same
+  the first paint, the static fallback is left alone. It also owns the
+  hover-to-name lookup and its floating label (see **Star names** below).
+- `js/menu.js` — the settings panel: a gear in the top-right that opens a small
+  ASCII readout for latitude, longitude, facing direction and the star-names
+  toggle. Split like the
+  rest: `rows(fields, settings)` is **pure** art over pre-formatted strings, in the same
   `{text, cls}` shape `scene.js` emits (so `test/menu.test.js` pins the drawing
   with no DOM at all); `install()` is the wiring. It writes the URL fragment and
   **there is no wire to `main.js` on purpose** — the panel, the address bar, a
   shared link and the Back button are then one code path, and the URL always
-  says what is drawn. It builds itself from script, so nothing appears on the
-  no-JS page that could not work.
+  says what is drawn. The one setting that cannot travel in the fragment is
+  announced as a `CustomEvent` on `window` instead, which is the same idea: a
+  channel the browser owns, not a reference between the two files. It builds
+  itself from script, so nothing appears on the no-JS page that could not work.
 - `css/style.css` — site styling, the monospace stack with ligatures and kerning
   disabled (a coding font ligating `/\`, `=\`, `===` would break the character
   grid), and the `.fence`/`.lawn`/`.vine`/`.meteor`/star classes. The bare `pre`
@@ -80,7 +86,8 @@ All of the above are enforced by tests.
 - `test/sky.test.js` — pins the astronomy to **published values** (Meeus
   examples 12.b and 13.b, Polaris-at-latitude geometry), never to our own
   output; plus catalog integrity, projection invariants, `parseView`, and
-  sky.js purity.
+  sky.js purity. The star names are pinned the same way — index 0 is Sirius
+  because the catalog is sorted brightest-first, not because we said so.
 - `test/scene.test.js` — pins art fidelity byte-for-byte, sizing and layout
   sweeps, determinism and resize stability, placement, and the animations.
 - `test/menu.test.js` — pins the panel's art byte-for-byte and its column
@@ -240,7 +247,7 @@ Rules:
   to a byte-stillness assertion; `test/browser.test.js` checks the snuff
   explicitly).
 
-## Vantage panel
+## Settings panel
 
 The gear in the top-right corner opens the panel; it is shut on every load.
 `SkyMap.formatFields`/`formatView` are the inverse of `parseView` and live
@@ -277,6 +284,74 @@ what you read and what the URL says can never drift apart.
   cannot shift the row, and the brackets carry the state with no colour at all.
 - No click-outside-to-close, no geolocation, no persistence, no presets: the
   fragment *is* the state, and it is already shareable.
+- The star-names toggle is **session-only and deliberately not in the
+  fragment**. The fragment is a shareable description of *what is drawn*; a
+  display preference is neither shareable nor a property of the sky. Having no
+  address bar to travel through, it is announced as a `CustomEvent` on
+  `window` — the `hashchange` analogue. The event name is duplicated as a
+  literal in `main.js` and `menu.js` because main.js loads first and cannot
+  read the constant when it registers, the same reason `hash2` is copied
+  between `sky.js` and `scene.js`; a test pins the two spellings together.
+
+## Star names
+
+Hovering a star names it — the proper name where the star has one, otherwise
+the Bayer designation spelled out, otherwise the catalogue number. Off by
+default, behind the panel's `name` toggle.
+
+**The catalogue number appears only where the label is not really a name.**
+`Vega` needs no HD number beside it; `Alpha Lupi` does, because a designation
+is something you look up; and a star whose only name *is* `HD 82668` must not
+say it twice. So 206 of the 343 show a bare name, 130 carry a number, and the
+rest are a number standing alone.
+
+- **The hit test is geometric, and has to be.** The sky is painted as merged
+  runs, so two adjacent stars sharing a twinkle class are a single `<span>`
+  with nothing to attach a listener to. Star identity cannot go in the class
+  either: `cls` is pinned to `/^star( star-[123])?$/` and every emitted class
+  needs a stylesheet rule. So the pointer is converted to a grid cell and
+  looked up. **Highlighting the hovered star is a dead end** for the same
+  reason — don't spend a day on it.
+- The lookup is built from `Scene.starVisible`, **the same predicate
+  `buildScene` uses**, because `starCells()` output is a *superset* of what is
+  painted: anything in the moon, cat or fence halo is dropped. A second copy of
+  that rule in `main.js` would drift silently — nothing would fail, a few stars
+  would just be named while not being on the page.
+- **Exact cell, no snap radius.** Stars are ~1.1% of cells, so a one-cell
+  radius would make a tenth of the sky live and flicker between neighbours
+  inside a constellation. Exact is the only rule that is honest, and the only
+  one testable as a biconditional.
+- The label is chrome: a `<span>` appended to `<body>`, **never inside
+  `<pre id="scene">`**. A `<div>` would inherit the bare `div` rule and become
+  a full-width banner pinned to the bottom of the window — plausible enough in
+  a screenshot to be missed. It carries `pointer-events: none`, or it takes the
+  very mousemove that positions it and flickers itself away.
+- **The label never lies across the moon or the cat.** They are the subject of
+  the picture; a name written over them reads as damage, and hiding the
+  overlapping part would be worse. Placement tries below-right, below-left,
+  above-right, above-left and takes the first that is on screen *and* clear of
+  both — so the viewport edge and the two subjects share one rule rather than
+  each getting their own special case. If nothing is clear it stays on screen
+  and accepts the overlap, because vanishing would read as a broken feature.
+  The test constructs the near-miss rather than hoping a star sits close
+  enough, which depends on the date.
+- **Not wired to `motionGen`.** The label does not animate, and gating it on
+  reduced motion would take star names away from people who asked for less
+  movement, not less information. A test pins that.
+- Hover is guarded by `matchMedia('(hover: hover)')`, checked live: a tap
+  synthesises one `mousemove` and never a `mouseleave`, so a touch device would
+  otherwise light a label and keep it lit.
+- `render()` ends in a *condition*, not an early return. The hoisted cell
+  metrics must be assigned on every resize, including one that keeps the same
+  cell count — an early return there once left them stale.
+- The names table stops at `SKY_MAG_LIMIT` rather than covering all 1,637
+  stars, which keeps it at ~9 KB. Raising the limit fails a test rather than
+  silently producing anonymous stars.
+- Two harness traps this uncovered: the stub `matchMedia` used to ignore its
+  argument, so `(hover: hover)` answered with the reduced-motion state; and at
+  the default 1400×900 the grid *exactly* fills the window, so `rect.top` is 0
+  and code ignoring the wrapper's bottom anchoring passes. Hover tests run at
+  1400×939 and assert `top > 0`.
 
 ## Determinism
 

@@ -262,6 +262,107 @@
         5,286.6,-37.1,5
     ];
 
+    /*
+     * Names for every star bright enough to be drawn, parallel to CATALOG by
+     * index: NAMES[n] and IDS[n] describe the triplet at CATALOG[n*3].
+     *
+     * Same source and licence as the coordinates (HYG v4.1, CC BY-SA 4.0), and
+     * matched to them by (ra, dec, mag) value rather than by position, so a
+     * magnitude tie sorting differently could not misalign the two.
+     *
+     * A name is the traditional one where the star has one (206 of them do),
+     * otherwise the Bayer designation spelled out, otherwise Flamsteed,
+     * otherwise the catalogue number standing in as the name — the same order
+     * a star atlas uses.
+     *
+     * IDS carries a catalogue number only where the name is not really a
+     * name: a star called Vega needs no number, and one already called
+     * HD 82668 must not repeat it. So an id is present exactly for the Bayer
+     * and Flamsteed designations.
+     *
+     * The table stops at SKY_MAG_LIMIT rather than covering all 1,637 stars,
+     * which keeps it at ~9 KB. Raising that limit is caught by a test rather
+     * than silently producing anonymous stars.
+     */
+
+    var NAMES = [
+        "Sirius", "Canopus", "Arcturus", "Rigil Kentaurus", "Vega", "Capella", "Rigel", "Procyon", "Achernar",
+        "Betelgeuse", "Hadar", "Acrux", "Altair", "Aldebaran", "Spica", "Gl 194B", "Antares", "Pollux",
+        "Fomalhaut", "Mimosa", "Deneb", "Regulus", "Toliman", "Adhara", "Bellatrix", "Castor", "Gacrux",
+        "Shaula", "Elnath", "Alnilam", "Alnitak", "Miaplacidus", "Alnair", "Mirfak", "Wezen",
+        "Gamma-2 Velorum", "Dubhe", "Alioth", "Kaus Australis", "Menkalinan", "Alhena", "Avior", "Alsephina",
+        "Alkaid", "Atria", "Sargas", "Peacock", "Diphda", "Hamal", "Polaris", "Mirzam", "Alphard", "Algieba",
+        "Alpheratz", "Mirach", "Almach", "Algol", "Saiph", "Denebola", "Menkent", "Kochab", "Rasalhague",
+        "Nunki", "Tiaki", "Schedar", "Cih", "Naos", "Suhail", "Aspidiske", "Gamma Centauri", "Mizar",
+        "Alphecca", "Eltanin", "Sadr", "Caph", "Mintaka", "Merak", "Epsilon Centauri", "Eta Centauri",
+        "Alpha Lupi", "Dschubba", "Larawag", "Ankaa", "Phecda", "Izar", "Sabik", "Kappa Scorpii", "Enif",
+        "Scheat", "Menkar", "Aludra", "Markeb", "Zeta Ophiuchi", "Aljanah", "Alderamin", "Markab", "Sheratan",
+        "Arneb", "Zosma", "Delta Centauri", "Gienah", "Zeta Centauri", "Zubeneschamali", "Unukalhai", "Acrab",
+        "Ascella", "Ruchbah", "Hassaleh", "Phact", "Mahasim", "Pi Puppis", "Theta Carinae", "Mu Velorum",
+        "Kraz", "Alpha Muscae", "Porrima", "Muphrid", "Beta Lupi", "Yed Prior", "Athebyne", "Lesath",
+        "Kaus Media", "Tarazed", "Algenib", "Beta Hydri", "Zeta Persei", "Cursa", "Nihal", "Hatysa", "Tureis",
+        "Imai", "Iota Centauri", "Zubenelgenubi", "Gamma Lupi", "Beta Trianguli Australis", "Kornephoros",
+        "Paikauhale", "Zeta Herculis", "Rasalgethi", "Beta Arae", "Rastaban", "Alpha Arae", "Cebalrai",
+        "Kaus Borealis", "Alpha Hydri", "Acamar", "Gamma Persei", "Alcyone", "Epsilon Persei", "Tejat",
+        "Tau Puppis", "Gomeisa", "Upsilon Carinae", "Algorab", "Cor Caroli", "Vindemiatrix",
+        "Gamma Trianguli Australis", "Fang", "Alniyat", "Albaldah", "Fawaris", "Sadalsuud", "Deneb Algedi",
+        "Alpha Tucanae", "Matar", "Castor B", "Beta Trianguli", "Delta Persei", "Zaurak", "Almaaz", "Tianguan",
+        "Furud", "Omicron-2 Canis Majoris", "Ras Elased Australis", "Psi Ursae Majoris", "Epsilon Corvi",
+        "Beta Muscae", "Gamma Hydrae", "Seginus", "Pherkad", "Xamidimura", "Iota-1 Scorpii", "Alnasl", "Okab",
+        "Aldhanab", "Sadalmelik", "Wazn", "Mebsuta", "Zeta Hydrae", "Talitha", "Alpha Lyncis",
+        "Tania Australis", "Nu Hydrae", "Lambda Centauri", "Kappa Centauri", "Zeta Arae", "Sarin",
+        "Eta Sagittarii", "Altais", "Albireo", "Dabih", "Alpha Indi", "Tabit", "Epsilon Leporis", "Haedus",
+        "Nu Puppis", "Alpha Pictoris", "HD 82668", "Theta Ursae Majoris", "Alpha Circini", "Delta Lupi",
+        "Yed Posterior", "Kappa Ophiuchi", "Aldhibah", "Pi Herculis", "Fuyue", "Eta Serpentis",
+        "Phi Sagittarii", "Theta Aquilae", "Zeta Cygni", "Alfirk", "Errai", "Delta Andromedae",
+        "Beta Phoenicis", "Rho Persei", "Gamma Hydri", "Alpha Reticuli", "Alpha Doradus", "Mu Leporis",
+        "Propus", "Sigma Puppis", "Azmidi", "Omega Carinae", "HD 91465", "Chertan", "Megrez", "Pi Hydrae",
+        "Brachium", "Edasich", "Eta Scorpii", "Theta Ophiuchi", "Gamma Arae", "Nu Ophiuchi", "Sulafat",
+        "Tau Sagittarii", "Skat", "Gamma Phoenicis", "Mothallah", "Segin", "Lambda Tauri", "Chamukuy",
+        "Eta Orionis", "Meissa", "Alzirr", "Muscida", "Ashlesha", "HD 79351", "Adhafera", "HD 89388",
+        "Minelauva", "Heze", "Nu Centauri", "Zeta Lupi", "Epsilon Lupi", "Eta Lupi", "Mu Herculis",
+        "Lambda Aquilae", "Delta Aquilae", "Beta Pavonis", "Eta Cephei", "Zeta Cephei", "Homam", "Gl 656.1B",
+        "Achird", "Eta Ceti", "Tau Ceti", "Kaffaljidhma", "Rana", "Ain", "Kappa Canis Majoris", "Nganurganity",
+        "Wasat", "Chi Carinae", "Tarf", "Subra", "Phi Velorum", "Eta Leonis", "Tania Borealis",
+        "Alula Borealis", "Xi Hydrae", "Mu Centauri", "Nekkar", "Delta Bootis", "Mu Serpentis", "Eta Herculis",
+        "Xi Serpentis", "Alpha Telescopii", "Sheliak", "Xi-2 Sagittarii", "Gamma Sagittae", "Biham",
+        "Epsilon Gruis", "Iota Cephei", "Sadalbari", "Gamma Virginis", "Iota Ceti", "Theta Ceti", "Alpherg",
+        "Nembus", "Phi Eridani", "Bharani", "Omicron Tauri", "Atlas", "Upsilon-4 Eridani", "Tau Orionis",
+        "Gamma Leporis", "Zeta Leporis", "Theta Geminorum", "Lambda Geminorum", "Kappa Geminorum", "HD 63032",
+        "Omicron Velorum", "Alkaphrah", "Psi Velorum", "Lambda Hydrae", "Delta Crateris", "Lambda Muscae",
+        "Zavijava", "Ginan", "Delta Muscae", "Iota Lupi", "Rho Bootis", "Phi-1 Lupi", "Upsilon Librae",
+        "Pipirima", "Zeta-2 Scorpii", "Delta Arae", "Eta Pavonis", "Chi Draconis", "Delta Pavonis", "Algedi",
+        "Rotanev", "Omicron Andromedae"
+    ];
+
+    var IDS = [
+        "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+        "", "", "", "", "", "", "", "", "", "HD 68273", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+        "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "HD 110304", "", "", "",
+        "", "", "", "", "HD 118716", "HD 127972", "HD 129056", "", "", "", "", "", "", "HD 160578", "", "", "",
+        "", "", "HD 149757", "", "", "", "", "", "", "HD 105435", "", "HD 121263", "", "", "", "", "", "", "",
+        "", "HD 56855", "HD 93030", "HD 93497", "", "HD 109668", "", "", "HD 132058", "", "", "", "", "", "",
+        "HD 2151", "HD 24398", "", "", "", "", "", "HD 115892", "", "HD 138690", "HD 141891", "", "",
+        "HD 150680", "", "HD 157244", "", "HD 158427", "", "", "HD 12311", "", "HD 18925", "", "HD 24760", "",
+        "HD 50310", "", "HD 85123", "", "", "", "HD 135382", "", "", "", "", "", "", "HD 211416", "", "",
+        "HD 13161", "HD 22928", "", "", "", "", "HD 53138", "", "HD 96833", "HD 105707", "HD 110879",
+        "HD 115659", "", "", "", "HD 161471", "", "", "", "", "", "", "HD 76294", "", "HD 80493", "",
+        "HD 93813", "HD 100841", "HD 132200", "HD 152786", "", "HD 167618", "", "", "", "HD 196171", "",
+        "HD 32887", "", "HD 47670", "HD 50241", "", "HD 82328", "HD 128898", "HD 136298", "", "HD 153210", "",
+        "HD 156283", "", "HD 168723", "HD 173300", "HD 191692", "HD 202109", "", "", "HD 3627", "HD 6595",
+        "HD 19058", "HD 24512", "HD 27256", "HD 29305", "HD 33904", "", "HD 59717", "", "HD 89080", "", "", "",
+        "HD 123123", "", "", "HD 155203", "HD 157056", "HD 157246", "HD 163917", "", "HD 177716", "",
+        "HD 9053", "", "", "HD 25204", "", "HD 35411", "", "", "", "", "", "", "", "", "", "HD 120307",
+        "HD 134505", "HD 136504", "HD 143118", "HD 161797", "HD 177756", "HD 182640", "HD 197051", "HD 198149",
+        "HD 210745", "", "", "", "HD 6805", "HD 10700", "", "", "", "HD 50013", "", "", "HD 65575", "", "",
+        "HD 86440", "HD 87737", "", "", "HD 100407", "HD 120324", "", "HD 135722", "HD 141513", "HD 150997",
+        "HD 159876", "HD 169467", "", "HD 175775", "HD 189319", "", "HD 215789", "HD 216228", "", "HD 110380",
+        "HD 1522", "HD 8512", "", "", "HD 14228", "", "HD 21120", "", "HD 27376", "HD 34503", "HD 38393",
+        "HD 38678", "HD 50019", "HD 56537", "HD 62345", "", "HD 74195", "", "HD 82434", "HD 88284", "HD 98430",
+        "HD 102249", "", "", "HD 112985", "HD 125238", "HD 127665", "HD 136422", "HD 139063", "", "HD 152334",
+        "HD 158094", "HD 160635", "HD 170153", "HD 190248", "", "", "HD 217675"
+    ];
+
     // One column is a degree of azimuth, one row two degrees of altitude —
     // matching the ~2:1 character cell, so constellation shapes stay locally
     // true. The equirectangular projection stretches azimuth near the zenith;
@@ -359,6 +460,10 @@
             var variant = (hash2(i, 0, 0x51ab90e3) >>> 4) & 3;
             cells.push({
                 x: x, y: y, char: glyph,
+                // Which star this is, so a caller can name it. The offset is
+                // already in hand for the twinkle hash; i / 3 is the star's
+                // ordinal and the key into NAMES / IDS.
+                index: i / 3,
                 cls: variant === 0 ? 'star' : 'star star-' + variant
             });
         }
@@ -452,6 +557,17 @@
         return '#lat=' + f.lat + '&lon=' + f.lon + '&dir=' + f.dir;
     }
 
+    /*
+     * How a star is written down: { name, id }, or undefined for one this
+     * table does not reach. `id` is an empty string when the catalogue number
+     * is already serving as the name. Never throws, whatever it is handed.
+     */
+    function starLabel(index) {
+        var name = NAMES[index];
+        if (!name) return undefined;
+        return { name: name, id: IDS[index] || '' };
+    }
+
     var SkyMap = {
         CATALOG: CATALOG,
         DEG_PER_COL: DEG_PER_COL,
@@ -467,7 +583,8 @@
         starCells: starCells,
         parseView: parseView,
         formatFields: formatFields,
-        formatView: formatView
+        formatView: formatView,
+        starLabel: starLabel
     };
 
     if (typeof module !== 'undefined' && module.exports) {

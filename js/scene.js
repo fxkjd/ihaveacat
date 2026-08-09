@@ -69,13 +69,12 @@
     var TAIL_PATCH_COL = 12;
     // The cat's tail is woven into the fence at rows 0-3; rows 4-5 are the
     // plain post pattern. Applied opaquely: its spaces erase the rail/post
-    // underneath, they don't leave it showing through.
+    // underneath, they don't leave it showing through. The whole patch is
+    // the cat: it sits in FRONT of the fence, so every cell inside its
+    // silhouette keeps the cat's colour — colouring row 0 as fence left a
+    // dim rail closing the gap between the cat's legs, which read as the
+    // cat's own base being greyed out.
     var TAIL_PATCH = ['_  _/', '( (', ' ) )', '(_(', null, null];
-    // The whole patch is the cat: it sits in FRONT of the fence, so every
-    // cell inside its silhouette keeps the cat's colour. Colouring row 0 as
-    // fence left a dim rail closing the gap between the cat's legs, which
-    // read as the cat's own base being greyed out.
-    var TAIL_PATCH_IS_CAT = [true, true, true, true, false, false];
 
     /*
      * Tail wag: a pendulum. The tail hangs from the cat's rear, so the
@@ -200,17 +199,23 @@
         return h >>> 0;
     }
 
+    // Where a core column falls in the fence's period-3 post/rail pattern.
+    // Core columns are negative left of the core, so this is the
+    // non-negative modulo — plain `c % 3` breaks there.
+    function mod3(c) {
+        return ((c % 3) + 3) % 3;
+    }
+
     /*
      * The fence pattern at core column c — unbounded, so the fence runs off
      * both edges of the viewport and never shows an end. The post/rail
      * repeats with period 3; because c is core-relative the period stays
      * locked to the cat's tail at every viewport size (generating in screen
      * coordinates would drift the period as the core's on-screen offset
-     * changes parity). c is negative left of the core, so the modulo has to
-     * be the non-negative kind — plain `c % 3` breaks there.
+     * changes parity).
      */
     function fenceChar(row, c) {
-        var m = ((c % 3) + 3) % 3;
+        var m = mod3(c);
         if (row === 0) return m === 2 ? '_' : (m === 0 ? '/' : '\\');
         return m === 2 ? '|' : ' ';
     }
@@ -226,7 +231,7 @@
 
     // The post column owning the picket that core column c belongs to.
     function picketPost(c) {
-        var m = ((c % 3) + 3) % 3;
+        var m = mod3(c);
         return c - (m === 2 ? 0 : (m === 0 ? 1 : 2));
     }
 
@@ -347,7 +352,7 @@
         var state = picketState(picketPost(c));
         if (state === PICKET_MISSING) return ' ';
         var sag = state === PICKET_SAGGING ? 1 : 0;
-        var m = ((c % 3) + 3) % 3;
+        var m = mod3(c);
         if (m === 2) {                       // the post column
             if (row < sag) return ' ';
             if (row === sag) return '_';
@@ -471,6 +476,21 @@
                inBoxWithHalo(L.fenceBox, x, y);
     }
 
+    /*
+     * Is a supplied star actually drawn? SkyMap.starCells() output is a
+     * SUPERSET of what lands on screen — anything off the grid or inside the
+     * moon, cat or fence halo is dropped. buildScene runs this as its own
+     * test, and main.js runs the same one to decide whether a hovered cell
+     * holds a star it can name. A second copy of the rule over there would
+     * drift silently: nothing would fail, a few stars would just be named
+     * while not being on the page. occupied() stays private — callers need
+     * the answer, not the halo rule.
+     */
+    function starVisible(s, L) {
+        return !!s && s.x >= 0 && s.x < L.cols && s.y >= 0 && s.y < L.rows &&
+            !occupied(s.x, s.y, L);
+    }
+
     // Merge a row of {char, cls} cells into runs, trimming trailing spaces
     // (a space renders the same whether it's inside a classed span or not,
     // so trimming regardless of class keeps output small without changing
@@ -545,9 +565,7 @@
         // Both paths obey occupied(): never on the moon, cat or fence halos.
         if (opts.stars) {
             opts.stars.forEach(function (s) {
-                if (!s) return;
-                if (s.x < 0 || s.x >= cols || s.y < 0 || s.y >= rows) return;
-                if (occupied(s.x, s.y, L)) return;
+                if (!starVisible(s, L)) return;
                 set(s.x, s.y, s.char, s.cls);
             });
         } else {
@@ -625,7 +643,7 @@
         // sides at the rooted base, thinning to a tendril at the tip.
         for (x = 0; x < cols; x++) {
             var vc = x - L.coreLeft;
-            if (((vc % 3) + 3) % 3 !== 2) continue;   // post columns only
+            if (mod3(vc) !== 2) continue;             // post columns only
             var climb = vineRows(vc);
             if (!climb) continue;
             for (var k = 0; k < climb; k++) {
@@ -639,7 +657,10 @@
                 for (var si = 0; si < sides.length; si++) {
                     var vx = x + sides[si];
                     if (vx < 0 || vx >= cols) continue;
-                    var vg = glyphs[(hash2(vx, vrow, SEED_VINE) >>> 6) % glyphs.length];
+                    // Hashed on the core-relative column, like every other
+                    // placement: a screen column here made each resize re-leaf
+                    // the climbers, since coreLeft shifts with the grid.
+                    var vg = glyphs[(hash2(vc + sides[si], vrow, SEED_VINE) >>> 6) % glyphs.length];
                     set(vx, L.fenceTop + vrow, vg, 'vine');
                 }
             }
@@ -759,7 +780,6 @@
         CAT_BASE_WIDTH: CAT_BASE_WIDTH,
         CAT_BASE_COL: CAT_BASE_COL,
         CAT_BASE_ART: CAT_BASE_ART,
-        TAIL_PATCH_IS_CAT: TAIL_PATCH_IS_CAT,
         TAIL_WAG_FRAMES: TAIL_WAG_FRAMES,
         TAIL_WAG_SEQUENCE: TAIL_WAG_SEQUENCE,
         TAIL_REST_FRAME: TAIL_REST_FRAME,
@@ -778,6 +798,7 @@
         tailPose: tailPose,
         meteorCells: meteorCells,
         meteorAlive: meteorAlive,
+        starVisible: starVisible,
         fireflyCell: fireflyCell,
         fenceRowText: fenceRowText,
         layout: layout,
