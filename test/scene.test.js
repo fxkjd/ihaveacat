@@ -8,6 +8,38 @@ const path = require('node:path');
 const Scene = require('../js/scene.js');
 const MoonPhase = require('../js/moon.js');
 
+test('star ink bounds respect baseline, bearings and actual punctuation height', () => {
+    const box = Scene.starInkBox({ x: 3, y: 2 }, {
+        actualBoundingBoxLeft: -2, actualBoundingBoxRight: 6,
+        actualBoundingBoxAscent: 3, actualBoundingBoxDescent: 1
+    }, 10, 20, 15);
+    assert.deepEqual(box, { left: 32, right: 36, top: 52, bottom: 56 });
+});
+
+test('independent star edges terminate at ink boundaries in every direction', () => {
+    const a = { left: 0, right: 4, top: 0, bottom: 4 };
+    assert.deepEqual(Scene.starEdge(a, { left: 10, right: 14, top: 0, bottom: 4 }),
+        { x1: 4, y1: 2, x2: 10, y2: 2 });
+    assert.deepEqual(Scene.starEdge(a, { left: 0, right: 4, top: 10, bottom: 14 }),
+        { x1: 2, y1: 4, x2: 2, y2: 10 });
+    const onBoundary = (x, y, box) => x >= box.left - 1e-9 && x <= box.right + 1e-9 &&
+        y >= box.top - 1e-9 && y <= box.bottom + 1e-9 &&
+        Math.min(Math.abs(x - box.left), Math.abs(x - box.right), Math.abs(y - box.top), Math.abs(y - box.bottom)) < 1e-9;
+    for (let angle = 0; angle < 360; angle += 7) {
+        const x = 30 * Math.cos(angle * Math.PI / 180), y = 30 * Math.sin(angle * Math.PI / 180);
+        const b = { left: x, right: x + 3, top: y, bottom: y + 7 };
+        const e = Scene.starEdge(a, b);
+        assert.ok(onBoundary(e.x1, e.y1, a)); assert.ok(onBoundary(e.x2, e.y2, b));
+        for (const t of [0.01, 0.5, 0.99]) {
+            const px = e.x1 + t * (e.x2 - e.x1), py = e.y1 + t * (e.y2 - e.y1);
+            for (const box of [a, b]) assert.ok(!(px > box.left && px < box.right && py > box.top && py < box.bottom));
+        }
+    }
+    assert.equal(Scene.starEdge(a, a), null);
+    assert.equal(Scene.starEdge(a, { left: 3, right: 5, top: 0, bottom: 4 }), null);
+    assert.equal(Scene.starEdge(a, null), null);
+});
+
 function stripTags(html) {
     return html.replace(/<span[^>]*>/g, '').replace(/<\/span>/g, '');
 }

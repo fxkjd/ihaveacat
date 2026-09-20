@@ -60,7 +60,8 @@ test('the catalog is whole-sphere, brightest-first, naked-eye', () => {
         const ra = SkyMap.CATALOG[i], dec = SkyMap.CATALOG[i + 1], mag = SkyMap.CATALOG[i + 2];
         assert.ok(ra >= 0 && ra < 360, `ra ${ra} out of range`);
         assert.ok(dec >= -90 && dec <= 90, `dec ${dec} out of range`);
-        assert.ok(mag <= 5.0, `mag ${mag} beyond the naked-eye cut`);
+        assert.ok(mag <= 5.0 || SkyMap.CONSTELLATIONS.some(c => c.segments.some(s => s.includes(i / 3))),
+            `mag ${mag} beyond the generation cut without a constellation`);
         if (i >= 3) {
             assert.ok(mag >= SkyMap.CATALOG[i - 1],
                 'catalog must be sorted brightest-first: collisions rely on it');
@@ -77,6 +78,48 @@ test('the catalog is whole-sphere, brightest-first, naked-eye', () => {
 // ---- The projection ------------------------------------------------------
 
 const VIEW = { date: new Date('2026-08-06T21:00:00Z'), lat: 41.39, lon: 2.17, azimuth: 180 };
+
+test('only required stars receive the enabled magnitude exception', () => {
+    const required = new Set(SkyMap.CONSTELLATIONS.flatMap(c => c.segments.flat()));
+    for (let i = 0; i < SkyMap.CATALOG.length / 3; i++) {
+        const normal = SkyMap.CATALOG[i * 3 + 2] <= 3.6;
+        assert.equal(SkyMap.starEnabled(i, false), normal);
+        assert.equal(SkyMap.starEnabled(i, true), normal || required.has(i));
+    }
+    assert.equal(SkyMap.starEnabled(-1, true), false);
+});
+
+test('shared projections preserve collided endpoint identities without duplicate ASCII cells', () => {
+    let collisions = 0, faint = 0;
+    for (const lat of [-50, 0, 50]) {
+        const positions = [];
+        const opts = { ...VIEW, lat, cols: 360, skyRows: 46, constellations: true, positions };
+        const cells = SkyMap.starCells(opts);
+        assert.equal(new Set(cells.map(s => s.x + ':' + s.y)).size, cells.length);
+        positions.forEach((p, i) => {
+            const cell = cells.find(s => s.x === p.x && s.y === p.y);
+            assert.ok(cell, 'projected endpoint has an ASCII star in its cell');
+            if (cell.index !== i) collisions++;
+            if (SkyMap.CATALOG[i * 3 + 2] > 3.6) faint++;
+        });
+    }
+    assert.ok(collisions > 0);
+    assert.ok(faint > 0);
+});
+
+test('segments require both endpoints and reject hidden, same-cell and azimuth-seam lines', () => {
+    const [a, b] = SkyMap.CONSTELLATIONS[0].segments[0];
+    const positions = [];
+    positions[a] = { x: 4, y: 3 };
+    assert.equal(SkyMap.visibleSegments(positions, () => true).length, 0);
+    positions[b] = { x: 6, y: 5 };
+    assert.equal(SkyMap.visibleSegments(positions, () => true).length, 1);
+    assert.equal(SkyMap.visibleSegments(positions, p => p.x !== 6).length, 0);
+    positions[b] = { x: 4, y: 3 };
+    assert.equal(SkyMap.visibleSegments(positions, () => true).length, 0);
+    positions[b] = { x: 359, y: 3 };
+    assert.equal(SkyMap.visibleSegments(positions, () => true).length, 0);
+});
 
 test('starCells is deterministic and stays inside the window', () => {
     const a = SkyMap.starCells({ ...VIEW, cols: 140, skyRows: 37 });

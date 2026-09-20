@@ -69,17 +69,144 @@
 
     var skyView = hasSky ? SkyMap.parseView(currentHash()) : null;
     var skyStars = null;
+    var constellationsOn = false;
+    var starPositions = [];
+    var constellationSVG = null;
+    var baselineProbe = null, inkContext = null;
+
+    function measureStarInk() {
+        if (!baselineProbe) {
+            inkContext = document.createElement('canvas').getContext('2d');
+            baselineProbe = document.createElement('span');
+            baselineProbe.setAttribute('aria-hidden', 'true');
+            baselineProbe.style.display = 'inline-block';
+            baselineProbe.style.width = '0';
+            baselineProbe.style.height = '0';
+            baselineProbe.style.verticalAlign = 'baseline';
+        }
+        if (!inkContext) return null;
+        var style = getComputedStyle(pre);
+        var font = (style.fontStyle || 'normal') + ' ' + (style.fontWeight || 'normal') +
+            ' ' + pre.style.fontSize + ' ' + style.fontFamily;
+        // An empty inline-block sits exactly on the HTML text baseline.
+        rowEls[0].appendChild(baselineProbe);
+        var baseline = baselineProbe.getBoundingClientRect().top - pre.getBoundingClientRect().top;
+        rowEls[0].removeChild(baselineProbe);
+        inkContext.font = font;
+        inkContext.fontKerning = 'none';
+        inkContext.textAlign = 'left';
+        inkContext.textBaseline = 'alphabetic';
+        var metrics = {};
+        ['*', "'", '.'].forEach(function (glyph) { metrics[glyph] = inkContext.measureText(glyph); });
+        return { baseline: baseline, metrics: metrics };
+    }
+
+    function paintedStarBox(star, ink, origin) {
+        var runs = rowEls[star.y].childNodes, offset = star.x;
+        for (var i = 0; i < runs.length; i++) {
+            var run = runs[i], text = run.textContent;
+            if (offset >= text.length) { offset -= text.length; continue; }
+            var range = document.createRange();
+            range.selectNodeContents(run);
+            var node = run.nodeType === 3 ? run : run.firstChild;
+            range.setStart(node, offset);
+            range.setEnd(node, offset + 1);
+            var rect = range.getBoundingClientRect();
+            // Range supplies the browser's final text placement, including
+            // fractional advance rounding at run boundaries. Canvas is only
+            // used for ink metrics, never to paint stars or project the sky.
+            var box = Scene.starInkBox(star, ink.metrics[star.char], charWpx, lineHpx, ink.baseline);
+            var dx = rect.left - origin.left - star.x * charWpx;
+            box.left += dx; box.right += dx;
+            return box;
+        }
+        return null;
+    }
 
     function computeStars() {
         if (!hasSky || !(last.cols > 0)) return;
+        starPositions = [];
         skyStars = SkyMap.starCells({
             date: loadedAt,
             lat: skyView.lat,
             lon: skyView.lon,
             azimuth: skyView.azimuth,
             cols: last.cols,
+            constellations: constellationsOn,
+            positions: constellationsOn ? starPositions : null,
             skyRows: Scene.layout(last.cols, last.rows).fenceTop
         });
+    }
+
+    function svgNode(tag, attrs) {
+        var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+        Object.keys(attrs).forEach(function (key) { el.setAttribute(key, attrs[key]); });
+        return el;
+    }
+
+    // Only called on sky/settings/layout changes, never by redraw() or an
+    // animation frame. Pixel metrics and the pre origin also update on a
+    // resize which leaves the grid dimensions unchanged.
+    function paintConstellations() {
+        if (!constellationsOn || !hasSky || !(last.cols > 0)) {
+            if (constellationSVG) constellationSVG.style.display = 'none';
+            return;
+        }
+        if (!constellationSVG) {
+            constellationSVG = svgNode('svg', { 'class': 'constellations', 'aria-hidden': 'true', focusable: 'false' });
+            document.body.appendChild(constellationSVG);
+        }
+        var L = Scene.layout(last.cols, last.rows);
+        var ink = measureStarInk();
+        if (!ink) { constellationSVG.style.display = 'none'; return; }
+        var r = pre.getBoundingClientRect();
+        var w = last.cols * charWpx, h = L.fenceTop * lineHpx;
+        constellationSVG.style.display = 'block';
+        constellationSVG.style.left = r.left + 'px';
+        constellationSVG.style.top = r.top + 'px';
+        constellationSVG.style.width = w + 'px';
+        constellationSVG.style.height = h + 'px';
+        constellationSVG.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+        var frag = document.createDocumentFragment();
+        var defs = svgNode('defs', {});
+        var mask = svgNode('mask', { id: 'constellation-sky-mask', maskUnits: 'userSpaceOnUse',
+            x: 0, y: 0, width: w, height: h });
+        // Reuse the exact scene visibility predicate, including its halos.
+        // White row runs leave the moon, cat (including text) and fence black.
+        for (var y = 0; y < L.fenceTop; y++) {
+            var start = -1;
+            for (var x = 0; x <= last.cols; x++) {
+                var clear = x < last.cols && Scene.starVisible({ x: x, y: y }, L);
+                if (clear && start < 0) start = x;
+                if (!clear && start >= 0) {
+                    mask.appendChild(svgNode('rect', { x: start * charWpx, y: y * lineHpx,
+                        width: (x - start) * charWpx, height: lineHpx, fill: 'white' }));
+                    start = -1;
+                }
+            }
+        }
+        var boxes = {};
+        skyStars.forEach(function (star) {
+            if (!Scene.starVisible(star, L)) return;
+            var box = paintedStarBox(star, ink, r);
+            if (!box) return;
+            boxes[star.x + ':' + star.y] = box;
+            // Also protect unrelated stars that a segment happens to cross.
+            // This mask never inherits animated star opacity.
+            mask.appendChild(svgNode('rect', { x: box.left, y: box.top,
+                width: box.right - box.left, height: box.bottom - box.top, fill: 'black' }));
+        });
+        defs.appendChild(mask);
+        frag.appendChild(defs);
+        var lines = svgNode('g', { mask: 'url(#constellation-sky-mask)' });
+        SkyMap.visibleSegments(starPositions, function (s) { return Scene.starVisible(s, L); })
+            .forEach(function (s) {
+                var edge = Scene.starEdge(boxes[s[0].x + ':' + s[0].y], boxes[s[1].x + ':' + s[1].y]);
+                if (edge) lines.appendChild(svgNode('line', edge));
+            });
+        frag.appendChild(lines);
+        while (constellationSVG.firstChild) constellationSVG.removeChild(constellationSVG.firstChild);
+        constellationSVG.appendChild(frag);
     }
 
     function viewport() {
@@ -198,6 +325,7 @@
             buildHoverNames();
             paint(buildFrame());
         }
+        paintConstellations();
         // A stationary cursor covers a different cell after a resize.
         updateHover();
     }
@@ -376,6 +504,15 @@
      * asked for less movement, not less information.
      */
     addEventListener(HOVER_EVENT, function (e) {
+        var show = !!(e && e.detail && e.detail.constellations);
+        if (show !== constellationsOn) {
+            constellationsOn = show;
+            computeStars();
+            buildHoverNames();
+            redraw();
+            paintConstellations();
+            updateHover();
+        }
         var on = !!(e && e.detail && e.detail.names);
         if (on === hoverOn) return;
         hoverOn = on;
@@ -620,6 +757,7 @@
         // Same cell under the cursor, different star in it.
         buildHoverNames();
         redraw();
+        paintConstellations();
         updateHover();
     });
     if (document.fonts && document.fonts.ready) {

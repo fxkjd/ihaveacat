@@ -31,6 +31,121 @@ function gridFor(w, h) {
     return Scene.fitGrid(w, h, 0.6 * f.fontPx, f.lineHeightPx);
 }
 
+function svgDescendants(el, tag) {
+    return (el.children || []).flatMap(c => [ ...(c.tagName === tag ? [c] : []), ...svgDescendants(c, tag) ]);
+}
+function near(actual, expected) { assert.ok(Math.abs(actual - expected) < 1e-8, `${actual} != ${expected}`); }
+function glyphMetrics(glyph, fontSize) {
+    // Deliberately asymmetric ink: punctuation is not centred in a cell.
+    const vertical = glyph === '*' ? [0.72, -0.28] : glyph === "'" ? [0.8, -0.6] : [0.15, 0.02];
+    return { actualBoundingBoxLeft: -0.17 * fontSize, actualBoundingBoxRight: 0.43 * fontSize,
+        actualBoundingBoxAscent: vertical[0] * fontSize, actualBoundingBoxDescent: vertical[1] * fontSize };
+}
+
+test('constellations align on resize and orientation, mask foreground, and restore the disabled scene', () => {
+    const now = '2026-01-15T22:00:00Z';
+    const page = loadPage({ now, reducedMotion: true, hover: false });
+    const baseline = page.pre.children.map(r => JSON.stringify(r.children?.map(c => [c.textContent, c.className, c.nodeValue])));
+    assert.equal(page.byClass('constellations').length, 0);
+    page.constellationToggle().click();
+    const svg = page.byClass('constellations')[0];
+    assert.ok(svg);
+    assert.ok(svgDescendants(svg, 'line').length > 0);
+    for (const [w, h] of [[1400,939],[700,469.5],[390,844],[844,390],[1400,900]]) {
+        page.resize(w, h);
+        page.tick();
+        page.orientation();
+        const L = Scene.layout(gridFor(w, h).cols, gridFor(w, h).rows);
+        const charW = parseFloat(page.pre.style.fontSize) * 0.6;
+        const lineH = parseFloat(page.pre.style.lineHeight);
+        assert.equal(parseFloat(svg.style.left), page.rect().left);
+        assert.equal(parseFloat(svg.style.top), page.rect().top);
+        near(parseFloat(svg.style.width), L.cols * charW);
+        assert.equal(parseFloat(svg.style.height), L.fenceTop * lineH);
+        const positions = [];
+        const stars = SkyMap.starCells({ date: new Date(now), ...SkyMap.DEFAULT_VIEW,
+            cols: L.cols, skyRows: L.fenceTop, constellations: true, positions });
+        const fontSize = parseFloat(page.pre.style.fontSize);
+        const boxes = new Map(stars.map(s => [s.x + ':' + s.y,
+            Scene.starInkBox(s, glyphMetrics(s.char, fontSize), charW, lineH, fontSize * 0.8)]));
+        const expected = SkyMap.visibleSegments(positions, p => Scene.starVisible(p, L))
+            .map(s => Scene.starEdge(boxes.get(s[0].x + ':' + s[0].y), boxes.get(s[1].x + ':' + s[1].y))).filter(Boolean);
+        const lines = svgDescendants(svg, 'line');
+        assert.equal(lines.length, expected.length);
+        lines.forEach((line, i) => {
+            const attrs = line.attributes;
+            ['x1','y1','x2','y2'].forEach(key => near(+attrs[key], expected[i][key]));
+        });
+        const masks = svgDescendants(svg, 'rect').map(r => r.attributes);
+        const rects = masks.filter(r => r.fill === 'white');
+        const cutouts = masks.filter(r => r.fill === 'black');
+        const visible = stars.filter(s => Scene.starVisible(s, L));
+        assert.equal(cutouts.length, visible.length);
+        cutouts.forEach((r, i) => {
+            const box = boxes.get(visible[i].x + ':' + visible[i].y);
+            near(+r.x, box.left); near(+r.y, box.top);
+            near(+r.width, box.right - box.left); near(+r.height, box.bottom - box.top);
+        });
+        for (let y = 0; y < L.fenceTop; y++) for (let x = 0; x < L.cols; x++) {
+            const px = (x + 0.5) * charW, py = (y + 0.5) * lineH;
+            const clear = rects.some(r => px >= +r.x && px < +r.x + +r.width && py >= +r.y && py < +r.y + +r.height);
+            assert.equal(clear, Scene.starVisible({ x, y }, L), 'mask disagrees with foreground visibility');
+        }
+    }
+    const oldLines = svgDescendants(svg, 'line');
+    page.dir('n').click(); page.tick();
+    assert.notDeepEqual(svgDescendants(svg, 'line').map(l => l.attributes), oldLines.map(l => l.attributes));
+    page.dir('s').click(); page.tick();
+    page.constellationToggle().click();
+    assert.equal(svg.style.display, 'none');
+    assert.deepEqual(page.pre.children.map(r => JSON.stringify(r.children?.map(c => [c.textContent, c.className, c.nodeValue]))), baseline);
+    assert.deepEqual(page.errors, []);
+});
+
+test('foreground animations never rebuild the constellation overlay', () => {
+    const page = loadPage({ now: '2026-01-15T22:00:00Z', random: () => 0 });
+    page.constellationToggle().click();
+    const svg = page.byClass('constellations')[0];
+    const lines = svgDescendants(svg, 'line');
+    assert.ok(lines.length > 0);
+    for (let i = 0; i < 2000; i++) page.tick();
+    const after = svgDescendants(svg, 'line');
+    assert.equal(after.length, lines.length);
+    after.forEach((line, i) => assert.equal(line, lines[i]));
+    assert.deepEqual(page.errors, []);
+});
+
+test('line endpoints follow fractional painted text placement, not reconstructed cell centres', () => {
+    const options = { now: '2026-01-15T22:00:00Z', reducedMotion: true };
+    const ordinary = loadPage(options), shifted = loadPage({ ...options, textOffset: 0.1875 });
+    ordinary.constellationToggle().click(); shifted.constellationToggle().click();
+    const before = svgDescendants(ordinary.byClass('constellations')[0], 'line');
+    const after = svgDescendants(shifted.byClass('constellations')[0], 'line');
+    assert.ok(before.length > 0); assert.equal(after.length, before.length);
+    after.forEach((line, i) => {
+        for (const key of ['x1', 'x2']) near(+line.attributes[key] - +before[i].attributes[key], 0.1875);
+        for (const key of ['y1', 'y2']) near(+line.attributes[key], +before[i].attributes[key]);
+    });
+});
+
+test('constellation preference persists across loads and tolerates unavailable storage', () => {
+    const values = new Map();
+    const storage = { getItem(k) { return values.get(k); }, setItem(k, v) { values.set(k, v); } };
+    const first = loadPage({ storage, reducedMotion: true });
+    first.constellationToggle().click();
+    const next = loadPage({ storage, reducedMotion: true });
+    assert.equal(next.constellationToggle().attributes['aria-pressed'], 'true');
+    assert.equal(next.byClass('constellations')[0].style.display, 'block');
+    next.toggle().click();
+    assert.equal(next.byClass('constellations')[0].style.display, 'block', 'names must not reset constellations');
+    next.constellationToggle().click();
+    assert.equal(loadPage({ storage }).constellationToggle().attributes['aria-pressed'], 'false');
+    const blocked = loadPage({ storage: { getItem() { throw Error('blocked'); }, setItem() { throw Error('blocked'); } } });
+    blocked.constellationToggle().click();
+    assert.equal(blocked.byClass('constellations')[0].style.display, 'block');
+    assert.deepEqual(blocked.errors, []);
+});
+
 function element(tag, doc) {
     return {
         tagName: tag,
@@ -42,10 +157,18 @@ function element(tag, doc) {
         hidden: false,
         type: '',
         ownerDocument: doc || null,
+        getContext() {
+            return { font: '', measureText(glyph) { return glyphMetrics(glyph, parseFloat(/([\d.]+)px/.exec(this.font)[1])); } };
+        },
         listeners: {},
         firstChild: null,
+        get childNodes() { return this.children; },
         parentNode: null,
-        setAttribute() {},
+        attributes: {},
+        setAttribute(name, value) {
+            this.attributes[name] = String(value);
+            if (name === 'class') this.className = String(value);
+        },
         // Real listeners. These used to be a no-op, which is why no UI in this
         // project was ever testable; main.js attaches none, so recording them
         // changes nothing for the suites that came before.
@@ -102,6 +225,10 @@ function element(tag, doc) {
         rect: null,
         getBoundingClientRect() {
             if (this.rect) return this.rect;
+            if (this.style.verticalAlign === 'baseline') {
+                const pre = this.parentNode.parentNode;
+                return { top: pre.getBoundingClientRect().top + parseFloat(pre.style.fontSize) * 0.8 };
+            }
             const w = this.textContent.length * parseFloat(this.style.fontSize || '10') * 0.6;
             return { left: 0, top: 0, right: w, bottom: 0, width: w, height: 0, x: 0, y: 0 };
         }
@@ -137,6 +264,7 @@ function loadPage(options) {
     }
 
     const win = {
+        localStorage: opts.storage || { getItem() { return null; }, setItem() {} },
         requestAnimationFrame(cb) { return frameQueue.push(cb); },
         setTimeout(fn, ms) { return timers.push({ fn, at: now + ms }); },
         /*
@@ -180,7 +308,25 @@ function loadPage(options) {
         document: {
             getElementById(id) { return id === 'scene' ? pre : null; },
             createElement(tag) { return element(tag, this); },
-            createTextNode(text) { return { nodeValue: text }; },
+            createElementNS(ns, tag) { return element(tag, this); },
+            createTextNode(text) { return { nodeType: 3, nodeValue: text, textContent: text }; },
+            createRange() {
+                let run, offset;
+                return {
+                    selectNodeContents(el) { run = el; },
+                    setStart(node, start) { offset = start; },
+                    setEnd() {},
+                    getBoundingClientRect() {
+                        const row = run.parentNode;
+                        let col = offset;
+                        for (const sibling of row.children) {
+                            if (sibling === run) break;
+                            col += sibling.textContent.length;
+                        }
+                        return { left: pre.getBoundingClientRect().left + col * parseFloat(pre.style.fontSize) * 0.6 + (opts.textOffset || 0) };
+                    }
+                };
+            },
             createDocumentFragment() { return element('#fragment'); },
             documentElement: { clientWidth: 1400, clientHeight: 900 },
             body: element('body'),
@@ -233,7 +379,7 @@ function loadPage(options) {
     // Pin the context's Math.random before the scripts load — main.js draws
     // from it during startup, and a deterministic flight lets a test aim it.
     if (opts.random) vm.runInContext('Math', ctx).random = opts.random;
-    ['js/moon.js', 'js/sky.js', 'js/scene.js', 'js/main.js', 'js/menu.js'].forEach((rel) => {
+    ['js/moon.js', 'js/constellations.generated.js', 'js/sky.js', 'js/scene.js', 'js/main.js', 'js/menu.js'].forEach((rel) => {
         if (opts.withoutSky && rel === 'js/sky.js') return;
         vm.runInContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), ctx, { filename: rel });
     });
@@ -260,7 +406,9 @@ function loadPage(options) {
         gear() { return this.byClass('menu-gear')[0]; },
         panel() { return this.byClass('menu')[0]; },
         label() { return this.byClass('star-name')[0]; },
-        toggle() { return this.byClass('menu-toggle')[0]; },
+        toggle() { return this.byClass('menu-toggle').find(b => b.attributes['aria-label'] === 'star names'); },
+        constellationToggle() { return this.byClass('menu-toggle').find(b => b.attributes['aria-label'] === 'Constellations'); },
+        orientation() { win.dispatchEvent(new win.CustomEvent('orientationchange')); },
         rect() { return pre.getBoundingClientRect(); },
         // A pixel inside a grid cell. fx/fy pick where in the cell, so a test
         // can sweep the fraction instead of only ever probing the centre.

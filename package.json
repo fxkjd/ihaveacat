@@ -3,6 +3,8 @@
   "private": true,
   "description": "ihavea.cat page",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "audit:constellations": "node tools/catalog.js audit",
+    "generate:catalog": "node tools/catalog.js generate"
   }
 }

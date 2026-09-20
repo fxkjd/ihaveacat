@@ -1,0 +1,12 @@
+[
+  {
+    "hip": 55203,
+    "hyg": 118742,
+    "hd": 98231,
+    "reason": "Xi UMa / Alula Australis: HYG v3.5 removed the invalid HIP record. Use the existing brighter A component (HD 98231), not a coordinate-neighbour guess.",
+    "sources": [
+      "https://github.com/astronexus/HYG-Database/blob/c7f7f883fe678cc7680169a50ccd7dcc49b060ce/hyg/version-info.md#v35-a-number-of-errors-in-the-hip-hd-mapping-used-to-create-hyg-were-found-during-processing-of-the-at-hyg-catalog",
+      "https://w.astro.berkeley.edu/~kalas/disksite/library/phillips10a.pdf (Table A1: HIP 55203, HD 98231, GJ 423 A)"
+    ]
+  }
+]

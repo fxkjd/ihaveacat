@@ -465,6 +465,35 @@
         };
     }
 
+    // Font ink metrics and baseline are measured by main.js in CSS pixels.
+    // Use the final painted cell, including its collision-winning glyph.
+    function starInkBox(star, metrics, charWidth, lineHeight, baseline) {
+        return {
+            left: star.x * charWidth - metrics.actualBoundingBoxLeft,
+            right: star.x * charWidth + metrics.actualBoundingBoxRight,
+            top: star.y * lineHeight + baseline - metrics.actualBoundingBoxAscent,
+            bottom: star.y * lineHeight + baseline + metrics.actualBoundingBoxDescent
+        };
+    }
+
+    // Intersect each centre-to-centre ray with its own glyph's ink box.
+    // A butt-capped line stops at the boundary, not behind the ASCII glyph.
+    function starEdge(a, b) {
+        if (!a || !b) return null;
+        var ax = (a.left + a.right) / 2, ay = (a.top + a.bottom) / 2;
+        var bx = (b.left + b.right) / 2, by = (b.top + b.bottom) / 2;
+        var dx = bx - ax, dy = by - ay;
+        if (!dx && !dy) return null;
+        function exit(box) {
+            return Math.min(dx ? (box.right - box.left) / (2 * Math.abs(dx)) : Infinity,
+                dy ? (box.bottom - box.top) / (2 * Math.abs(dy)) : Infinity);
+        }
+        var from = exit(a), to = 1 - exit(b);
+        if (from >= to) return null; // touching/overlapping glyphs leave no line
+        return { x1: ax + from * dx, y1: ay + from * dy,
+            x2: ax + to * dx, y2: ay + to * dy };
+    }
+
     function inBoxWithHalo(box, x, y) {
         return x >= box.left - 1 && x <= box.right + 1 &&
                y >= box.top - 1 && y <= box.bottom + 1;
@@ -799,6 +828,8 @@
         meteorCells: meteorCells,
         meteorAlive: meteorAlive,
         starVisible: starVisible,
+        starInkBox: starInkBox,
+        starEdge: starEdge,
         fireflyCell: fireflyCell,
         fenceRowText: fenceRowText,
         layout: layout,

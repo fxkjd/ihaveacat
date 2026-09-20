@@ -48,7 +48,7 @@ test('page stays file:// compatible and script order is correct', () => {
     // menu.js is last on purpose: it is chrome, and if it ever throws the
     // scene has already painted.
     assert.deepEqual(order,
-        ['js/moon.js', 'js/sky.js', 'js/scene.js', 'js/main.js', 'js/menu.js']);
+        ['js/moon.js', 'js/constellations.generated.js', 'js/sky.js', 'js/scene.js', 'js/main.js', 'js/menu.js']);
 
     const refs = [
         ...order,
@@ -191,7 +191,10 @@ test('every transition is cancelled under prefers-reduced-motion', () => {
     // `animation` and `transition` separately and has been missed once before.
     const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
     [...stripped.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-        .filter((m) => /transition:\s*(?!none)/.test(m[2]))
+        .filter((m) => {
+            const transition = /transition:\s*([^;]+)/.exec(m[2]);
+            return transition && transition[1].trim() !== 'none';
+        })
         .forEach((m) => {
             m[1].trim().split(',').forEach((sel) => {
                 const cls = sel.trim().replace(/:.*$/, '');
@@ -264,4 +267,18 @@ test('the project stays dependency-free', () => {
     ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'].forEach((k) => {
         assert.ok(!pkg[k] || Object.keys(pkg[k]).length === 0, `package.json gained ${k}`);
     });
+});
+
+test('constellation strokes use the dim star state without twinkle or transitions', () => {
+    const css = readFile('css/style.css');
+    const overlay = /\.constellations\s*\{([^}]+)\}/.exec(css)[1];
+    const lines = /\.constellations line\s*\{([^}]+)\}/.exec(css)[1];
+    assert.match(overlay, /color:\s*var\(--star-color\)/);
+    assert.match(lines, /stroke-opacity:\s*var\(--star-dim-opacity\)/);
+    assert.match(css, /50%\s*\{\s*opacity:\s*var\(--star-dim-opacity\)/);
+    for (const rules of [overlay, lines]) {
+        assert.match(rules, /animation:\s*none/);
+        assert.match(rules, /transition:\s*none/);
+    }
+    assert.match(lines, /stroke-linecap:\s*butt/);
 });

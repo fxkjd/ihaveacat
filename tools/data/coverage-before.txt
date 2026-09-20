@@ -1,0 +1,305 @@
+Total constellations: 88
+Unique constellation stars: 750
+Already in catalog: 730
+Missing from catalog: 20
+Complete constellations: 77
+Partial constellations: 11
+Empty figures: 0
+Segments: 731/756
+
+Missing HIP 5737: magnitude 5.21; Pisces
+Missing HIP 10826: magnitude 6.47; Cetus
+Missing HIP 12225: magnitude 5.3; Horologium
+Missing HIP 12484: magnitude 5.21; Horologium
+Missing HIP 12653: magnitude 5.4; Horologium
+Missing HIP 14240: magnitude 5.12; Horologium
+Missing HIP 21060: magnitude 5.07; Caelum
+Missing HIP 21861: magnitude 5.04; Caelum
+Missing HIP 22871: magnitude 5.47; Mensa
+Missing HIP 23467: magnitude 5.3; Mensa
+Missing HIP 25918: magnitude 5.18; Mensa
+Missing HIP 29271: magnitude 5.08; Mensa
+Missing HIP 48437: magnitude 5.07; Sextans
+Missing HIP 51362: magnitude 5.19; Sextans
+Missing HIP 51437: magnitude 5.08; Sextans
+Missing HIP 56250: magnitude 5.12; Centaurus
+Missing HIP 58188: magnitude 5.17; Crater
+Missing HIP 79195: magnitude 5.39; Serpens
+Missing HIP 101483: magnitude 5.39; Delphinus
+Missing HIP 107608: magnitude 5.02; PiscisAustrinus
+
+Andromeda:
+  stars: 16/16 (100.0%)
+  segments: 16/16 (100.0%)
+Antlia:
+  stars: 3/3 (100.0%)
+  segments: 2/2 (100.0%)
+Apus:
+  stars: 4/4 (100.0%)
+  segments: 3/3 (100.0%)
+Aquarius:
+  stars: 16/16 (100.0%)
+  segments: 17/17 (100.0%)
+Aquila:
+  stars: 11/11 (100.0%)
+  segments: 12/12 (100.0%)
+Ara:
+  stars: 8/8 (100.0%)
+  segments: 7/7 (100.0%)
+Aries:
+  stars: 4/4 (100.0%)
+  segments: 3/3 (100.0%)
+Auriga:
+  stars: 9/9 (100.0%)
+  segments: 10/10 (100.0%)
+Bootes:
+  stars: 12/12 (100.0%)
+  segments: 13/13 (100.0%)
+Caelum:
+  stars: 2/4 (50.0%)
+  segments: 0/3 (0.0%)
+  missing HIP: 21861, 21060
+Camelopardalis:
+  stars: 8/8 (100.0%)
+  segments: 7/7 (100.0%)
+Cancer:
+  stars: 5/5 (100.0%)
+  segments: 4/4 (100.0%)
+CanesVenatici:
+  stars: 2/2 (100.0%)
+  segments: 1/1 (100.0%)
+CanisMajor:
+  stars: 10/10 (100.0%)
+  segments: 11/11 (100.0%)
+CanisMinor:
+  stars: 2/2 (100.0%)
+  segments: 1/1 (100.0%)
+Capricornus:
+  stars: 8/8 (100.0%)
+  segments: 8/8 (100.0%)
+Carina:
+  stars: 15/15 (100.0%)
+  segments: 15/15 (100.0%)
+Cassiopeia:
+  stars: 5/5 (100.0%)
+  segments: 4/4 (100.0%)
+Centaurus:
+  stars: 21/22 (95.5%)
+  segments: 22/23 (95.7%)
+  missing HIP: 56250
+Cepheus:
+  stars: 10/10 (100.0%)
+  segments: 11/11 (100.0%)
+Cetus:
+  stars: 12/13 (92.3%)
+  segments: 12/14 (85.7%)
+  missing HIP: 10826
+Chamaeleon:
+  stars: 5/5 (100.0%)
+  segments: 5/5 (100.0%)
+Circinus:
+  stars: 3/3 (100.0%)
+  segments: 2/2 (100.0%)
+Columba:
+  stars: 5/5 (100.0%)
+  segments: 4/4 (100.0%)
+ComaBerenices:
+  stars: 3/3 (100.0%)
+  segments: 2/2 (100.0%)
+CoronaAustralis:
+  stars: 5/5 (100.0%)
+  segments: 4/4 (100.0%)
+CoronaBorealis:
+  stars: 7/7 (100.0%)
+  segments: 6/6 (100.0%)
+Corvus:
+  stars: 5/5 (100.0%)
+  segments: 5/5 (100.0%)
+Crater:
+  stars: 7/8 (87.5%)
+  segments: 7/8 (87.5%)
+  missing HIP: 58188
+Crux:
+  stars: 4/4 (100.0%)
+  segments: 2/2 (100.0%)
+Cygnus:
+  stars: 12/12 (100.0%)
+  segments: 13/13 (100.0%)
+Delphinus:
+  stars: 5/6 (83.3%)
+  segments: 4/6 (66.7%)
+  missing HIP: 101483
+Dorado:
+  stars: 6/6 (100.0%)
+  segments: 7/7 (100.0%)
+Draco:
+  stars: 14/14 (100.0%)
+  segments: 14/14 (100.0%)
+Equuleus:
+  stars: 2/2 (100.0%)
+  segments: 1/1 (100.0%)
+Eridanus:
+  stars: 29/29 (100.0%)
+  segments: 28/28 (100.0%)
+Fornax:
+  stars: 3/3 (100.0%)
+  segments: 2/2 (100.0%)
+Gemini:
+  stars: 17/17 (100.0%)
+  segments: 16/16 (100.0%)
+Grus:
+  stars: 8/8 (100.0%)
+  segments: 8/8 (100.0%)
+Hercules:
+  stars: 21/21 (100.0%)
+  segments: 22/22 (100.0%)
+Horologium:
+  stars: 2/6 (33.3%)
+  segments: 0/5 (0.0%)
+  missing HIP: 12653, 12225, 12484, 14240
+Hydra:
+  stars: 21/21 (100.0%)
+  segments: 20/20 (100.0%)
+Hydrus:
+  stars: 3/3 (100.0%)
+  segments: 3/3 (100.0%)
+Indus:
+  stars: 4/4 (100.0%)
+  segments: 4/4 (100.0%)
+Lacerta:
+  stars: 9/9 (100.0%)
+  segments: 10/10 (100.0%)
+Leo:
+  stars: 14/14 (100.0%)
+  segments: 17/17 (100.0%)
+LeoMinor:
+  stars: 5/5 (100.0%)
+  segments: 5/5 (100.0%)
+Lepus:
+  stars: 11/11 (100.0%)
+  segments: 12/12 (100.0%)
+Libra:
+  stars: 6/6 (100.0%)
+  segments: 6/6 (100.0%)
+Lupus:
+  stars: 10/10 (100.0%)
+  segments: 11/11 (100.0%)
+Lynx:
+  stars: 8/8 (100.0%)
+  segments: 7/7 (100.0%)
+Lyra:
+  stars: 6/6 (100.0%)
+  segments: 7/7 (100.0%)
+Mensa:
+  stars: 0/4 (0.0%)
+  segments: 0/3 (0.0%)
+  missing HIP: 23467, 22871, 25918, 29271
+Microscopium:
+  stars: 4/4 (100.0%)
+  segments: 3/3 (100.0%)
+Monoceros:
+  stars: 9/9 (100.0%)
+  segments: 9/9 (100.0%)
+Musca:
+  stars: 6/6 (100.0%)
+  segments: 6/6 (100.0%)
+Norma:
+  stars: 4/4 (100.0%)
+  segments: 4/4 (100.0%)
+Octans:
+  stars: 3/3 (100.0%)
+  segments: 3/3 (100.0%)
+Ophiuchus:
+  stars: 17/17 (100.0%)
+  segments: 18/18 (100.0%)
+Orion:
+  stars: 22/22 (100.0%)
+  segments: 24/24 (100.0%)
+Pavo:
+  stars: 11/11 (100.0%)
+  segments: 12/12 (100.0%)
+Pegasus:
+  stars: 13/13 (100.0%)
+  segments: 13/13 (100.0%)
+Perseus:
+  stars: 19/19 (100.0%)
+  segments: 21/21 (100.0%)
+Phoenix:
+  stars: 6/6 (100.0%)
+  segments: 7/7 (100.0%)
+Pictor:
+  stars: 3/3 (100.0%)
+  segments: 2/2 (100.0%)
+Pisces:
+  stars: 16/17 (94.1%)
+  segments: 16/18 (88.9%)
+  missing HIP: 5737
+PiscisAustrinus:
+  stars: 7/8 (87.5%)
+  segments: 7/9 (77.8%)
+  missing HIP: 107608
+Puppis:
+  stars: 11/11 (100.0%)
+  segments: 11/11 (100.0%)
+Pyxis:
+  stars: 4/4 (100.0%)
+  segments: 3/3 (100.0%)
+Reticulum:
+  stars: 4/4 (100.0%)
+  segments: 4/4 (100.0%)
+Sagitta:
+  stars: 4/4 (100.0%)
+  segments: 3/3 (100.0%)
+Sagittarius:
+  stars: 10/10 (100.0%)
+  segments: 13/13 (100.0%)
+Scorpius:
+  stars: 18/18 (100.0%)
+  segments: 17/17 (100.0%)
+Sculptor:
+  stars: 4/4 (100.0%)
+  segments: 3/3 (100.0%)
+Scutum:
+  stars: 4/4 (100.0%)
+  segments: 4/4 (100.0%)
+Serpens:
+  stars: 13/14 (92.9%)
+  segments: 12/13 (92.3%)
+  missing HIP: 79195
+Sextans:
+  stars: 1/4 (25.0%)
+  segments: 0/3 (0.0%)
+  missing HIP: 51362, 51437, 48437
+Taurus:
+  stars: 13/13 (100.0%)
+  segments: 11/11 (100.0%)
+Telescopium:
+  stars: 3/3 (100.0%)
+  segments: 2/2 (100.0%)
+Triangulum:
+  stars: 3/3 (100.0%)
+  segments: 3/3 (100.0%)
+TriangulumAustrale:
+  stars: 4/4 (100.0%)
+  segments: 4/4 (100.0%)
+Tucana:
+  stars: 6/6 (100.0%)
+  segments: 6/6 (100.0%)
+UrsaMajor:
+  stars: 19/19 (100.0%)
+  segments: 21/21 (100.0%)
+UrsaMinor:
+  stars: 7/7 (100.0%)
+  segments: 7/7 (100.0%)
+Vela:
+  stars: 8/8 (100.0%)
+  segments: 8/8 (100.0%)
+Virgo:
+  stars: 14/14 (100.0%)
+  segments: 14/14 (100.0%)
+Volans:
+  stars: 5/5 (100.0%)
+  segments: 6/6 (100.0%)
+Vulpecula:
+  stars: 2/2 (100.0%)
+  segments: 1/1 (100.0%)

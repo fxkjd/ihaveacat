@@ -22,7 +22,8 @@
     var FIELD_COLS = 7;
     var FIELDS = ['lat', 'lon'];
     var ROSE = ['n', 'e', 's', 'w'];
-    var TOGGLES = ['name'];
+    var TOGGLES = ['constellations', 'name'];
+    var CONSTELLATIONS_KEY = 'ihaveacat.constellations';
     var TOGGLE_ON = '(x)', TOGGLE_OFF = '( )';
     var TITLE = 'settings';
     var GEAR = '⚙︎';
@@ -75,7 +76,7 @@
          * Display preferences, below the sky. Taken as a second argument
          * rather than merged into `fields`: formatFields returns exactly the
          * three strings the fragment holds, and these are not among them —
-         * they are session-only and never travel in the URL. rows(fields)
+         * they never travel in the URL. rows(fields)
          * with no settings therefore draws them all off, which is the default
          * made structural.
          */
@@ -84,7 +85,7 @@
         TOGGLES.forEach(function (name) {
             var lit = !!s[name];
             out.push([
-                label(' ' + name + rep(' ', 5 - name.length)),
+                label(' ' + name + rep(' ', Math.max(1, 5 - name.length))),
                 {
                     toggle: name,
                     // Three cells either way, like a compass slot: the mark
@@ -116,8 +117,11 @@
         var sky = win.SkyMap;
         var view = sky.parseView(win.location ? win.location.hash : '');
         var inputs = {}, dirs = {}, toggles = {};
-        // Session-only: no fragment, off again on every load.
-        var settings = { name: false };
+        // Names remain page-local; constellations persist separately from the view.
+        var settings = { name: false, constellations: false };
+        // Existing preferences are page-local. This requested persistent
+        // preference uses one key; blocked storage (including file://) is OK.
+        try { settings.constellations = win.localStorage.getItem(CONSTELLATIONS_KEY) === 'true'; } catch (e) {}
 
         function within(n, limit) { return isFinite(n) && n >= -limit && n <= limit; }
 
@@ -192,7 +196,7 @@
         }
 
         /*
-         * A session-only setting has no address bar to travel through, so the
+         * A display setting has no address bar to travel through, so the
          * panel announces it on window instead — the direct analogue of
          * hashchange. The panel is brought up to date BEFORE the announcement
          * and never reads the event back, exactly as commitView is.
@@ -200,12 +204,15 @@
         function announce() {
             if (!win.CustomEvent || !win.dispatchEvent) return;   // degrade, don't throw
             win.dispatchEvent(new win.CustomEvent(SETTINGS_EVENT, {
-                detail: { names: settings.name }
+                detail: { names: settings.name, constellations: settings.constellations }
             }));
         }
 
         function setToggle(name) {
             settings[name] = !settings[name];
+            if (name === 'constellations') {
+                try { win.localStorage.setItem(CONSTELLATIONS_KEY, String(settings.constellations)); } catch (e) {}
+            }
             sync(true);
             announce();
         }
@@ -273,7 +280,7 @@
                 el = doc.createElement('button');
                 el.type = 'button';
                 el.textContent = seg.text;
-                el.setAttribute('aria-label', 'star ' + seg.toggle + 's');
+                el.setAttribute('aria-label', seg.toggle === 'name' ? 'star names' : 'Constellations');
                 el.addEventListener('click', function () { setToggle(seg.toggle); });
                 el.addEventListener('keydown', onButtonKey);
                 toggles[seg.toggle] = el;
@@ -332,6 +339,8 @@
 
         doc.body.appendChild(gear);
         doc.body.appendChild(panel);
+        sync(true);
+        announce();
 
         /*
          * The fragment also changes from the address bar, a shared link and

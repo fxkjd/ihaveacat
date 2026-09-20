@@ -28,6 +28,7 @@ test('the panel is drawn exactly as designed', () => {
         ' lon  [   2.17 ]',
         ' dir   n  e (s) w ',
         '',
+        ' constellations ( )',
         ' name ( )'
     ]);
 });
@@ -56,7 +57,7 @@ test('the toggle keeps the panel label column', () => {
     // ' name ' is six cells, so the mark starts where '[' and the first
     // compass slot do.
     const text = textOf(BCN);
-    const [lat, dir, name] = [text[2], text[4], text[6]];
+    const [lat, dir, name] = [text[2], text[4], text[7]];
     assert.equal(lat.indexOf('['), 6);
     assert.equal(dir.indexOf(' n '), 6);
     assert.equal(name.indexOf('( )'), 6);
