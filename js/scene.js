@@ -477,9 +477,12 @@
      * floored at a whole pixel so it survives a very small one. Deliberately
      * modest: the padded boxes of two stars in ADJACENT cells can overlap, and
      * an edge between them is then dropped (see starEdge) — at this ratio only
-     * a horizontally adjacent pair of bright `*` glyphs is close enough.
+     * a horizontally adjacent pair of bright `*` glyphs is close enough. A
+     * sweep of viewports, dates and directions loses the same handful of
+     * edges from 0.18 up to here; at 0.30 vertically adjacent pairs start to
+     * go too, about one edge in fifty. Don't raise it past this.
      */
-    var STAR_GAP_RATIO = 0.18;
+    var STAR_GAP_RATIO = 0.25;
 
     function starGap(charWidth, lineHeight) {
         return Math.max(1, Math.min(charWidth, lineHeight) * STAR_GAP_RATIO);

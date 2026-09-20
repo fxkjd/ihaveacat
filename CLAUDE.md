@@ -322,9 +322,11 @@ what you read and what the URL says can never drift apart.
   *under* the star rather than two stopping at it. The two uses have to agree:
   the mask erases whatever crosses its hole, so a line trimmed less generously
   than the hole is punched would be eaten there instead of ending cleanly.
-  `STAR_GAP_RATIO` (0.18 of the narrower cell dimension, floored at a pixel) is
+  `STAR_GAP_RATIO` (0.25 of the narrower cell dimension, floored at a pixel) is
   the knob; at that size no segment is lost at any viewport, which is the
-  constraint — two stars in adjacent cells must still be joined.
+  constraint — two stars in adjacent cells must still be joined. It was 0.18
+  and raised for breathing room; 0.30 is where vertically adjacent pairs
+  start dropping their edge, so that is the ceiling.
 - **Each figure is its own `<g class="constellation">`** inside the masked
   group, so hovering one line can light all of them with a single class write.
   `constellation-on` is the lit state: the twinkle keyframe's bright end, i.e.

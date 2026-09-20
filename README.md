@@ -101,7 +101,7 @@ locates each painted character (including fractional text-run rounding); a
 zero-height baseline marker and Canvas text metrics supply the glyph's ink
 bounds. Canvas is used only for font measurement; stars remain ASCII.
 Each edge is independently trimmed to its two glyph bounds grown by
-`Scene.starGap` — a gap of 18% of the narrower cell dimension — and the same
+`Scene.starGap` — a gap of 25% of the narrower cell dimension — and the same
 padded box punches the static mask that protects any other star the edge
 crosses. The padding is what makes the termination visible: trimmed to the
 outline exactly, the break has no width, and a 0.75px line at a quarter
