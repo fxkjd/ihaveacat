@@ -402,6 +402,7 @@ function loadPage(options) {
     return {
         pre,
         errors,
+        dispatchWindow(type, props) { win.dispatchEvent(Object.assign({ type }, props)); },
         hash() { return hash; },
         // How many hashchange events have actually fired, so a test can prove
         // that a redundant write fires none.
@@ -1658,6 +1659,77 @@ test('coordinate arrows step by one degree and stop at both limits', () => {
         }
     }
     assert.deepEqual(page.errors, []);
+});
+
+test('held coordinate arrows accelerate and release without an extra click step', () => {
+    for (const [field, label] of [['lat', 'latitude'], ['lon', 'longitude']]) {
+        for (const delta of [-1, 1]) {
+            const page = loadPage({ reducedMotion: true });
+            page.gear().click();
+            const button = page.byClass('menu-step').find(b =>
+                b.attributes['aria-label'] === (delta < 0 ? 'decrease ' : 'increase ') + label);
+            const initial = Number(page.field(field).value);
+            const advance = frames => { for (let i = 0; i < frames; i++) page.tick(); };
+            button.dispatch('pointerdown', { button: 0, pointerId: 7, isPrimary: true });
+            assert.equal(Number(page.field(field).value), initial + delta);
+            advance(24);
+            assert.equal(Number(page.field(field).value), initial + delta, 'initial repeat delay');
+            advance(36);
+            const firstSecond = Math.abs(Number(page.field(field).value) - initial);
+            advance(60);
+            const secondSecond = Math.abs(Number(page.field(field).value) - initial) - firstSecond;
+            assert.ok(secondSecond > firstSecond, 'repeat accelerates');
+            page.dispatchWindow('pointerup', { pointerId: 7 });
+            const released = page.field(field).value;
+            button.dispatch('click', { detail: 1 });
+            advance(60);
+            assert.equal(page.field(field).value, released, 'release stops and click is suppressed');
+            button.dispatch('click', { detail: 0 });
+            assert.equal(Number(page.field(field).value), Number(released) + delta, 'keyboard activation');
+            assert.deepEqual(page.errors, []);
+        }
+    }
+});
+
+test('coordinate holds stop on cancellation, focus loss and panel close', () => {
+    for (const stop of [
+        (page) => page.dispatchWindow('pointercancel', { pointerId: 7 }),
+        (page) => page.dispatchWindow('blur'),
+        (page) => page.dispatchWindow('pagehide'),
+        (page, button) => button.dispatch('lostpointercapture'),
+        (page, button) => button.dispatch('blur'),
+        (page, button) => button.dispatch('keydown', { key: 'Escape' }),
+        (page) => page.gear().click()
+    ]) {
+        const page = loadPage({ reducedMotion: true });
+        page.gear().click();
+        const button = page.byClass('menu-step')[0];
+        button.dispatch('pointerdown', { button: 0, pointerId: 7 });
+        stop(page, button);
+        const value = page.field('lat').value;
+        for (let i = 0; i < 120; i++) page.tick();
+        assert.equal(page.field('lat').value, value);
+        assert.deepEqual(page.errors, []);
+    }
+});
+
+test('held coordinate arrows clamp at both limits', () => {
+    for (const [field, label, limit] of [['lat', 'latitude', 90], ['lon', 'longitude', 180]]) {
+        for (const delta of [-1, 1]) {
+            const page = loadPage({ reducedMotion: true });
+            page.gear().click();
+            typeInto(page, field, String(delta * (limit - 2.5)));
+            const button = page.byClass('menu-step').find(b =>
+                b.attributes['aria-label'] === (delta < 0 ? 'decrease ' : 'increase ') + label);
+            button.dispatch('pointerdown', { button: 0, pointerId: 7 });
+            for (let i = 0; i < 120; i++) page.tick();
+            assert.equal(Number(page.field(field).value), delta * limit);
+            const changes = page.hashChanges();
+            for (let i = 0; i < 60; i++) page.tick();
+            assert.equal(page.hashChanges(), changes, 'no redundant fragment writes at limit');
+            assert.deepEqual(page.errors, []);
+        }
+    }
 });
 
 test('unavailable or corrupt storage leaves settings usable', () => {

@@ -133,6 +133,24 @@
             win.location.hash = sky.formatView(view);
         }
         var inputs = {}, dirs = {}, toggles = {};
+        var hold = null;
+
+        function stopHold() { hold = null; }
+
+        // Interaction timing belongs to the control, independently of scene
+        // animation and reduced motion. Invalidated callbacks cannot restart it.
+        function startHold(name, delta, pointerId) {
+            var active = { pointerId: pointerId, delay: 320 };
+            hold = active;
+            stepField(name, delta);
+            function repeat() {
+                if (hold !== active) return;
+                stepField(name, delta);
+                active.delay = Math.max(60, active.delay * 0.8);
+                win.setTimeout(repeat, active.delay);
+            }
+            win.setTimeout(repeat, 500);
+        }
 
         function saveView() {
             try { win.localStorage.setItem(VIEW_KEY, sky.formatView(view)); } catch (e) {}
@@ -298,7 +316,23 @@
                 el.textContent = seg.text;
                 el.setAttribute('aria-label', (seg.delta < 0 ? 'decrease ' : 'increase ') +
                     (seg.stepField === 'lat' ? 'latitude' : 'longitude'));
-                el.addEventListener('click', function () { stepField(seg.stepField, seg.delta); });
+                var pointerClick = false;
+                el.addEventListener('pointerdown', function (e) {
+                    if (e.button !== 0 || e.isPrimary === false) return;
+                    e.preventDefault();
+                    if (el.focus) el.focus();
+                    pointerClick = true;
+                    if (el.setPointerCapture) el.setPointerCapture(e.pointerId);
+                    startHold(seg.stepField, seg.delta, e.pointerId);
+                });
+                el.addEventListener('click', function (e) {
+                    // The pointer already stepped on press. Keyboard and
+                    // assistive activations (detail 0) still step normally.
+                    if (!pointerClick || e.detail === 0) stepField(seg.stepField, seg.delta);
+                    pointerClick = false;
+                });
+                el.addEventListener('lostpointercapture', stopHold);
+                el.addEventListener('blur', stopHold);
                 el.addEventListener('keydown', onButtonKey);
             } else if (seg.dir) {
                 el = doc.createElement('button');
@@ -337,6 +371,7 @@
         }
 
         function close(restore) {
+            stopHold();
             // Restore BEFORE moving focus. Hiding the panel blurs whatever is
             // focused inside it, and that blur would otherwise commit the
             // half-typed value Escape is supposed to abandon.
@@ -374,6 +409,17 @@
         sync(true);
         saveView();
         announce();
+
+        function endPointer(e) {
+            if (hold && e.pointerId === hold.pointerId) stopHold();
+        }
+        win.addEventListener('pointerup', endPointer);
+        win.addEventListener('pointercancel', endPointer);
+        win.addEventListener('blur', stopHold);
+        win.addEventListener('pagehide', stopHold);
+        doc.addEventListener('visibilitychange', function () {
+            if (doc.hidden) stopHold();
+        });
 
         /*
          * The fragment also changes from the address bar, a shared link and

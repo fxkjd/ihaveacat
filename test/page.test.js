@@ -241,11 +241,12 @@ test('the menu box absorbs the buttons\' tap-target overhang', () => {
     });
 });
 
-test('the menu is chrome only: no timing, no randomness, no innerHTML', () => {
+test('the menu is chrome only: no animation loop, no randomness, no innerHTML', () => {
     const src = readFile('js/menu.js');
     assert.doesNotMatch(src, /innerHTML/);
-    // All timing and randomness stays in main.js; the menu is event-driven.
-    assert.doesNotMatch(src, /setTimeout|setInterval|requestAnimationFrame|Math\.random/);
+    // setTimeout is used for the coordinate buttons' accelerating hold.
+    // Its cancellation and rate are exercised against the browser clock.
+    assert.doesNotMatch(src, /setInterval|requestAnimationFrame|Math\.random/);
 });
 
 test('scene.js, moon.js, sky.js and menu.js expose their browser (non-CommonJS) global correctly', () => {

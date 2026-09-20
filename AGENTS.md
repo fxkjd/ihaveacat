@@ -67,7 +67,7 @@ All of the above are enforced by tests.
 - `js/main.js` — browser wiring only. Measures character metrics with an
   offscreen probe, derives font and grid size from the viewport, and paints into
   `<pre id="scene">` with `createElement`/`textContent` (never `innerHTML`).
-  Owns **all timing and randomness**. Each row is its own `<span>`, so an
+  Owns **all scene animation timing and randomness**. Each row is its own `<span>`, so an
   animation frame repaints only the rows that changed. If anything fails before
   the first paint, the static fallback is left alone. It also owns the
   hover-to-name lookup and its floating label (see **Star names** below).
@@ -265,7 +265,8 @@ what you read and what the URL says can never drift apart.
   (a test asserts the scene is byte-identical across open, commit and close),
   its font size is **clamped** instead of scaling with the art — "no font-size
   cap" is a rule about the *scene*, and chrome obeying it would be 60px on a 4K
-  window — and it owns no timers and no randomness; those stay in `main.js`.
+  window — and owns no randomness. Scene animation timers stay in `main.js`;
+  the menu owns only its coordinate-button hold-repeat timer.
 - **One fragment write per deliberate change** (Enter, blur, a compass click),
   never per keystroke: each write is a history entry. A commit that does not
   move the vantage writes **nothing at all**, not even to canonicalise the
@@ -298,6 +299,10 @@ what you read and what the URL says can never drift apart.
 - Coordinate rows use `lat ▼ [number] ▲` (and `lon`). Each arrow steps by 1°
   and clamps at ±90° latitude or ±180° longitude; typed invalid values are
   still rejected.
+  Holding an arrow steps immediately, waits 500 ms, then repeats with intervals
+  accelerating from 256 ms down to 60 ms. Release, pointer cancellation, loss
+  of focus, hiding the page or closing the panel stops the hold. The release
+  click does not add another step; keyboard clicks still work normally.
 - `js/constellations.generated.js` loads before sky.js and contains 88 figures
   as catalogue-index pairs, maintained directly alongside the star catalogue.
 - `starCells` records optional endpoint positions before collision filtering
