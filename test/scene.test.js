@@ -40,6 +40,43 @@ test('independent star edges terminate at ink boundaries in every direction', ()
     assert.equal(Scene.starEdge(a, null), null);
 });
 
+test('the gap makes every termination visible, and scales with the cell', () => {
+    const metrics = {
+        actualBoundingBoxLeft: -2, actualBoundingBoxRight: 6,
+        actualBoundingBoxAscent: 3, actualBoundingBoxDescent: 1
+    };
+    const bare = Scene.starInkBox({ x: 3, y: 2 }, metrics, 10, 20, 15);
+    const gap = Scene.starGap(10, 20);
+    assert.equal(gap, 10 * Scene.STAR_GAP_RATIO, 'the gap follows the narrower of the two');
+    assert.equal(Scene.starGap(2, 3), 1, 'and never falls below a whole pixel');
+    // A padded box is the bare one grown by the gap on all four sides. A gap
+    // of zero is the old box exactly, so callers that want none still get none.
+    assert.deepEqual(Scene.starInkBox({ x: 3, y: 2 }, metrics, 10, 20, 15, gap), {
+        left: bare.left - gap, right: bare.right + gap,
+        top: bare.top - gap, bottom: bare.bottom + gap
+    });
+    assert.deepEqual(Scene.starInkBox({ x: 3, y: 2 }, metrics, 10, 20, 15, 0), bare);
+
+    /*
+     * The point of the gap: the line must stop SHORT of the ink, not on it.
+     * Trimmed to the outline exactly — which is what the unpadded box gives —
+     * the break has no width at all, and a 0.75px stroke at a quarter opacity
+     * then reads as one line passing under the star.
+     */
+    const far = (dx, dy) => ({ left: dx, right: dx + 4, top: dy, bottom: dy + 4 });
+    for (const [dx, dy] of [[60, 0], [0, 60], [45, 45], [-45, 30], [-60, -60]]) {
+        const bareEdge = Scene.starEdge(bare, far(dx, dy));
+        const padded = Scene.starEdge(
+            Scene.starInkBox({ x: 3, y: 2 }, metrics, 10, 20, 15, gap),
+            { left: dx - gap, right: dx + 4 + gap, top: dy - gap, bottom: dy + 4 + gap });
+        const shrunk = Math.hypot(padded.x1 - bareEdge.x1, padded.y1 - bareEdge.y1);
+        assert.ok(shrunk >= gap * 0.7 && shrunk <= gap * 1.5,
+            `towards ${dx},${dy} the line pulled back ${shrunk}, not about ${gap}`);
+        assert.ok(Math.hypot(padded.x2 - bareEdge.x2, padded.y2 - bareEdge.y2) >= gap * 0.7,
+            'the far end must pull back too — a crossed star is a star as well');
+    }
+});
+
 function stripTags(html) {
     return html.replace(/<span[^>]*>/g, '').replace(/<\/span>/g, '');
 }

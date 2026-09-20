@@ -66,8 +66,9 @@ test('constellations align on resize and orientation, mask foreground, and resto
         const stars = SkyMap.starCells({ date: new Date(now), ...SkyMap.DEFAULT_VIEW,
             cols: L.cols, skyRows: L.fenceTop, constellations: true, positions });
         const fontSize = parseFloat(page.pre.style.fontSize);
+        const gap = Scene.starGap(charW, lineH);
         const boxes = new Map(stars.map(s => [s.x + ':' + s.y,
-            Scene.starInkBox(s, glyphMetrics(s.char, fontSize), charW, lineH, fontSize * 0.8)]));
+            Scene.starInkBox(s, glyphMetrics(s.char, fontSize), charW, lineH, fontSize * 0.8, gap)]));
         const expected = SkyMap.visibleSegments(positions, p => Scene.starVisible(p, L))
             .map(s => Scene.starEdge(boxes.get(s[0].x + ':' + s[0].y), boxes.get(s[1].x + ':' + s[1].y))).filter(Boolean);
         const lines = svgDescendants(svg, 'line');

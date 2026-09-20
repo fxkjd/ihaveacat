@@ -115,7 +115,10 @@
             // Range supplies the browser's final text placement, including
             // fractional advance rounding at run boundaries. Canvas is only
             // used for ink metrics, never to paint stars or project the sky.
-            var box = Scene.starInkBox(star, ink.metrics[star.char], charWpx, lineHpx, ink.baseline);
+            // Padded once, here: the same box is trimmed against and punched
+            // out of the mask, so a line cannot be cut by one and not the other.
+            var box = Scene.starInkBox(star, ink.metrics[star.char], charWpx, lineHpx,
+                ink.baseline, Scene.starGap(charWpx, lineHpx));
             var dx = rect.left - origin.left - star.x * charWpx;
             box.left += dx; box.right += dx;
             return box;

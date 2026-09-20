@@ -302,6 +302,16 @@ what you read and what the URL says can never drift apart.
   (measurement only). Static glyph cutouts also protect stars crossed by an
   unrelated edge. Lines share the dim star color/opacity tokens and never
   inherit twinkle animations or animated mask opacity.
+- **The ink box is padded by `Scene.starGap` before either use**, and the same
+  padded box is trimmed against and punched out of the mask. Trimmed to the
+  outline exactly — which is what a zero gap gives — the break has no width at
+  all, and a 0.75px stroke at a quarter opacity then reads as one line passing
+  *under* the star rather than two stopping at it. The two uses have to agree:
+  the mask erases whatever crosses its hole, so a line trimmed less generously
+  than the hole is punched would be eaten there instead of ending cleanly.
+  `STAR_GAP_RATIO` (0.18 of the narrower cell dimension, floored at a pixel) is
+  the knob; at that size no segment is lost at any viewport, which is the
+  constraint — two stars in adjacent cells must still be joined.
 - The star-names toggle is **session-only and deliberately not in the
   fragment**. The fragment is a shareable description of *what is drawn*; a
   display preference is neither shareable nor a property of the sky. Having no

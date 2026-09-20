@@ -5,7 +5,8 @@ Source code for https://ihavea.cat/.
 ## Constellations
 
 Enable **Constellations** in the settings menu. Stars remain ASCII; faint SVG
-independent lines stop at each star glyph's measured ink bounds. The preference
+independent lines stop a visible gap short of each star glyph's measured ink
+bounds, at both their own ends and at any star they cross. The preference
 survives reloads using `localStorage` (`ihaveacat.constellations`); it defaults
 off and still works when storage is unavailable. The existing star-name
 preference remains page-local. No network data fetch or build step is needed
@@ -96,8 +97,13 @@ using the same character width and line height as the ASCII grid. A DOM Range
 locates each painted character (including fractional text-run rounding); a
 zero-height baseline marker and Canvas text metrics supply the glyph's ink
 bounds. Canvas is used only for font measurement; stars remain ASCII.
-Each edge is independently trimmed to its two glyph bounds, with a static
-mask also protecting any other star it crosses. Both segment
+Each edge is independently trimmed to its two glyph bounds grown by
+`Scene.starGap` — a gap of 18% of the narrower cell dimension — and the same
+padded box punches the static mask that protects any other star the edge
+crosses. The padding is what makes the termination visible: trimmed to the
+outline exactly, the break has no width, and a 0.75px line at a quarter
+opacity reads as one stroke passing under the star. The two must use the same
+box, because the mask erases whatever crosses its hole. Both segment
 endpoints must be in view and pass `Scene.starVisible`; zero-length and azimuth
 wrap-crossing lines are omitted. The SVG mask is built from that same scene
 predicate, including moon/cat/fence halos. Lines crossing foreground objects
