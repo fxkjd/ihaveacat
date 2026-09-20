@@ -20,7 +20,7 @@
      * in; fitGrid() never returns anything smaller, so the core is always
      * fully visible.
      *
-     * BASE_ROWS is also the primary size-tuning knob (see CLAUDE.md): raising
+     * BASE_ROWS is also the primary size-tuning knob (see AGENTS.md): raising
      * TOP_PAD_ROWS raises BASE_ROWS, which shrinks every character
      * proportionally on any height-bound (typical desktop) viewport, without
      * affecting full visibility or the constant-proportion guarantee.

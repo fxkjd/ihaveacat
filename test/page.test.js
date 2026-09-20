@@ -65,7 +65,7 @@ test('page stays file:// compatible and script order is correct', () => {
     });
 });
 
-test('main.js never uses innerHTML (CLAUDE.md hard constraint)', () => {
+test('main.js never uses innerHTML (AGENTS.md hard constraint)', () => {
     assert.doesNotMatch(readFile('js/main.js'), /innerHTML/);
 });
 

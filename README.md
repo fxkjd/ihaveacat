@@ -133,4 +133,4 @@ inherit star opacity, so twinkling cannot expose a line through a star.
 Constellations retain the existing projection's zenith
 distortion; this feature does not introduce a new celestial projection.
 
-See [CLAUDE.md](CLAUDE.md#astronomical-data-licenses-and-attribution) for data licenses and attribution.
+See [AGENTS.md](AGENTS.md#astronomical-data-licenses-and-attribution) for data licenses and attribution.
