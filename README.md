@@ -106,11 +106,15 @@ padded box punches the static mask that protects any other star the edge
 crosses. The padding is what makes the termination visible: trimmed to the
 outline exactly, the break has no width, and a 0.75px line at a quarter
 opacity reads as one stroke passing under the star. The two must use the same
-box, because the mask erases whatever crosses its hole. Both segment
-endpoints must be in view and pass `Scene.starVisible`; zero-length and azimuth
-wrap-crossing lines are omitted. The SVG mask is built from that same scene
-predicate, including moon/cat/fence halos. Lines crossing foreground objects
-are clipped even when both endpoints are clear.
+box, because the mask erases whatever crosses its hole. A segment is drawn
+when *either* endpoint is in view and passes `Scene.starVisible`; the other
+may be below the horizon, past the window's side, or behind the moon, cat or
+fence, and the line then runs to that cell's centre (`Scene.cellCentre`) for
+the mask or the sky's edge to cut. Zero-length and azimuth wrap-crossing lines
+are omitted, as are lines with both ends hidden. The SVG mask is built from
+that same scene predicate, including moon/cat/fence halos, so lines crossing
+foreground objects are clipped even when both endpoints are clear, and the
+hover hit test ignores pointer positions in masked cells for the same reason.
 
 Each figure gets its own `<g class="constellation">`, so a hover lights all of
 its lines with one class write. The hit test is geometric, in `main.js`,

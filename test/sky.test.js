@@ -90,14 +90,18 @@ test('only required stars receive the enabled magnitude exception', () => {
 });
 
 test('shared projections preserve collided endpoint identities without duplicate ASCII cells', () => {
-    let collisions = 0, faint = 0;
+    let collisions = 0, faint = 0, hidden = 0;
     for (const lat of [-50, 0, 50]) {
         const positions = [];
         const opts = { ...VIEW, lat, cols: 360, skyRows: 46, constellations: true, positions };
         const cells = SkyMap.starCells(opts);
         assert.equal(new Set(cells.map(s => s.x + ':' + s.y)).size, cells.length);
         positions.forEach((p, i) => {
+            const onGrid = p.x >= 0 && p.x < 360 && p.y >= 0 && p.y < 46;
             const cell = cells.find(s => s.x === p.x && s.y === p.y);
+            // An endpoint below the horizon or off the grid is still placed —
+            // the edge to it has to know where to point — but draws no star.
+            if (!onGrid) { hidden++; assert.equal(cell, undefined); return; }
             assert.ok(cell, 'projected endpoint has an ASCII star in its cell');
             if (cell.index !== i) collisions++;
             if (SkyMap.CATALOG[i * 3 + 2] > 3.6) faint++;
@@ -105,20 +109,69 @@ test('shared projections preserve collided endpoint identities without duplicate
     }
     assert.ok(collisions > 0);
     assert.ok(faint > 0);
+    assert.ok(hidden > 0);
 });
 
-test('segments require both endpoints and reject hidden, same-cell and azimuth-seam lines', () => {
+test('positions are recorded for constellation endpoints only', () => {
+    const endpoints = new Set(SkyMap.CONSTELLATIONS.flatMap(c => c.segments.flat()));
+    const positions = [];
+    SkyMap.starCells({ ...VIEW, cols: 200, skyRows: 46, constellations: true, positions });
+    positions.forEach((p, i) => assert.ok(endpoints.has(i), `star ${i} draws no figure`));
+    assert.ok(positions.some(Boolean));
+});
+
+test('a segment needs one drawn endpoint, not two; same-cell and azimuth-seam lines are still rejected', () => {
     const [a, b] = SkyMap.CONSTELLATIONS[0].segments[0];
     const positions = [];
     positions[a] = { x: 4, y: 3 };
-    assert.equal(SkyMap.visibleSegments(positions, () => true).length, 0);
+    assert.equal(SkyMap.visibleSegments(positions, () => true).length, 0, 'an unplaced endpoint has nowhere to point');
     positions[b] = { x: 6, y: 5 };
     assert.equal(SkyMap.visibleSegments(positions, () => true).length, 1);
-    assert.equal(SkyMap.visibleSegments(positions, p => p.x !== 6).length, 0);
+    // One end behind the moon, in the fence halo, below the horizon or off
+    // the side of the grid: the line is drawn and the mask ends it. Dropping
+    // it left Hydra and Virgo with holes wherever they touched the horizon.
+    assert.equal(SkyMap.visibleSegments(positions, p => p.x !== 6).length, 1);
+    assert.equal(SkyMap.visibleSegments(positions, p => p.x !== 4).length, 1);
+    assert.equal(SkyMap.visibleSegments(positions, () => false).length, 0, 'but two hidden ends draw nothing');
+    positions[b] = { x: -3, y: 60 };
+    assert.equal(SkyMap.visibleSegments(positions, p => p.x === 4).length, 1, 'off-grid ends count as hidden, not missing');
     positions[b] = { x: 4, y: 3 };
     assert.equal(SkyMap.visibleSegments(positions, () => true).length, 0);
     positions[b] = { x: 359, y: 3 };
     assert.equal(SkyMap.visibleSegments(positions, () => true).length, 0);
+});
+
+test('Hydra keeps its edges across the horizon and Virgo across the moon (Barcelona, south)', () => {
+    // The report: at the default vantage, figures straddling the fence or
+    // the moon were drawn with pieces missing. Pinned on the real sky.
+    const Scene = require('../js/scene.js');
+    const cols = 180, rows = 60, L = Scene.layout(cols, rows);
+    const count = (name, date) => {
+        const positions = [];
+        SkyMap.starCells({ date, lat: 41.39, lon: 2.17, azimuth: 180, cols, skyRows: L.fenceTop,
+            constellations: true, positions });
+        const ci = SkyMap.CONSTELLATIONS.findIndex(c => c.name === name);
+        const visible = p => Scene.starVisible(p, L);
+        const segs = SkyMap.visibleSegments(positions, visible).filter(s => s.figure === ci);
+        return {
+            drawn: segs.length,
+            partial: segs.filter(s => visible(s.a) !== visible(s.b)).length,
+            // Every edge the figure has whose stars are placed on either side of the fence.
+            straddling: SkyMap.CONSTELLATIONS[ci].segments.filter(([i, j]) => {
+                const a = positions[i], b = positions[j];
+                return a && b && visible(a) !== visible(b) && Math.abs(a.x - b.x) < 180;
+            }).length
+        };
+    };
+    const fence = count('Hydra', new Date(Date.UTC(2026, 8, 20, 8)));
+    assert.ok(fence.straddling >= 1, 'the fixture should have Hydra crossing the fence');
+    assert.equal(fence.partial, fence.straddling, 'every fence-crossing edge is drawn');
+    const moon = count('Hydra', new Date(Date.UTC(2026, 8, 20, 12)));
+    assert.ok(moon.straddling >= 2, 'the fixture should have Hydra passing behind the moon');
+    assert.equal(moon.partial, moon.straddling, 'every moon-touching edge is drawn');
+    const virgo = count('Virgo', new Date(Date.UTC(2026, 8, 20, 12)));
+    assert.ok(virgo.straddling >= 3, 'the fixture should have Virgo touching the moon');
+    assert.equal(virgo.partial, virgo.straddling, 'every moon-touching edge is drawn');
 });
 
 test('every segment says which figure drew it', () => {

@@ -667,14 +667,21 @@
             var mag = CATALOG[i + 2];
             if (!starEnabled(i / 3, !!opts.constellations)) continue;
             var p = altAz(CATALOG[i], CATALOG[i + 1], opts.date, opts.lat, opts.lon);
-            if (p.alt <= 0) continue;              // below the horizon
             var d = ((p.az - opts.azimuth + 540) % 360) - 180;   // wrap to +-180
             var x = half + Math.round(d / DEG_PER_COL);
             var y = skyRows - 1 - Math.floor(p.alt / DEG_PER_ROW);
-            if (x < 0 || x >= cols || y < 0 || y >= skyRows) continue;
             // Preserve each endpoint's identity even when a brighter star
             // occupies its cell. Both representations use THIS projection.
-            if (opts.positions) opts.positions[i / 3] = { x: x, y: y };
+            // Recorded BEFORE the horizon and grid tests: a figure's edge to
+            // a star just under the fence or past the window's side still has
+            // to know where to point, or the figure comes apart there (the
+            // mask ends the line; see visibleSegments). Positions are a
+            // projection, not a promise that a star is drawn.
+            if (opts.positions && constellationIndexes.has(i / 3)) {
+                opts.positions[i / 3] = { x: x, y: y };
+            }
+            if (p.alt <= 0) continue;              // below the horizon
+            if (x < 0 || x >= cols || y < 0 || y >= skyRows) continue;
             var key = x + ':' + y;
             if (taken[key]) continue;              // first (brighter) star keeps the cell
             taken[key] = true;
@@ -697,7 +704,13 @@
         return mag !== undefined && (mag <= SKY_MAG_LIMIT || (enabled && constellationIndexes.has(index)));
     }
 
-    // Endpoints must survive horizon/viewport projection and scene occlusion.
+    // An edge is drawn when EITHER end is a star on the page. The other may
+    // be below the horizon, off the window's side, or in the moon, cat or
+    // fence halo: the line is drawn towards where it would be and the SVG
+    // mask (built from the same `visible` predicate) ends it at the halo or
+    // the sky's edge. Requiring both ends left holes in every figure that
+    // touched the fence or the moon — Hydra lost most of itself at Barcelona.
+    // Two hidden ends draw nothing: nothing of that line could be seen.
     // Avoid joining opposite sides of the azimuth wrap in very wide views.
     //
     // Each edge carries the figure it belongs to, because a caller that wants
@@ -710,7 +723,7 @@
         CONSTELLATIONS.forEach(function (c, ci) {
             c.segments.forEach(function (s) {
                 var a = positions[s[0]], b = positions[s[1]];
-                if (!a || !b || !visible(a) || !visible(b)) return;
+                if (!a || !b || (!visible(a) && !visible(b))) return;
                 if (a.x === b.x && a.y === b.y) return;
                 if (Math.abs(a.x - b.x) * DEG_PER_COL >= 180) return;
                 out.push({ a: a, b: b, figure: ci });

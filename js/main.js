@@ -128,6 +128,7 @@
                 ink.baseline, Scene.starGap(charWpx, lineHpx));
             var dx = rect.left - origin.left - star.x * charWpx;
             box.left += dx; box.right += dx;
+            box.shift = dx;
             return box;
         }
         return null;
@@ -215,9 +216,24 @@
         // than a walk over its lines — and so the DOM says which figure is
         // which, which the flat list it replaces could not.
         var groups = {};
+        // An end with no painted glyph — under the horizon, off the side, or
+        // behind the moon, cat or fence — gets the bare cell centre, and the
+        // mask above ends the line where the star would have been. It is put
+        // in the measured frame of the star at the OTHER end (the Range shift
+        // that end was placed with), so the line keeps the direction it would
+        // have had with both glyphs measured: nothing was painted at a hidden
+        // cell to measure, and the visible star is the nearest thing that was.
+        function endBox(p, other) {
+            var box = boxes[p.x + ':' + p.y];
+            if (box) return box;
+            var c = Scene.cellCentre(p, charWpx, lineHpx);
+            var dx = (boxes[other.x + ':' + other.y] || {}).shift || 0;
+            c.left += dx; c.right += dx;
+            return c;
+        }
         SkyMap.visibleSegments(starPositions, function (s) { return Scene.starVisible(s, L); })
             .forEach(function (s) {
-                var edge = Scene.starEdge(boxes[s.a.x + ':' + s.a.y], boxes[s.b.x + ':' + s.b.y]);
+                var edge = Scene.starEdge(endBox(s.a, s.b), endBox(s.b, s.a));
                 if (!edge) return;
                 var hit = groups[s.figure];
                 if (!hit) {
@@ -463,6 +479,11 @@
     // than first, so where two figures pass close the pointer picks one and
     // stays with it instead of flickering on data order.
     function figureAt(x, y) {
+        // The drawn edges run on into the moon, the fence halo and past the
+        // horizon, where the mask hides them; the pointer must not find a
+        // line there that nobody can see. Same predicate as the mask.
+        var cell = { x: Math.floor(x / charWpx), y: Math.floor(y / lineHpx) };
+        if (!Scene.starVisible(cell, Scene.layout(last.cols, last.rows))) return null;
         var best = null, bestD = Math.max(HIT_MIN_PX, charWpx * HIT_RATIO);
         constellationHits.forEach(function (hit) {
             hit.edges.forEach(function (e) {

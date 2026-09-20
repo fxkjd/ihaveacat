@@ -67,12 +67,27 @@ test('constellations align on resize and orientation, mask foreground, and resto
             cols: L.cols, skyRows: L.fenceTop, constellations: true, positions });
         const fontSize = parseFloat(page.pre.style.fontSize);
         const gap = Scene.starGap(charW, lineH);
-        const boxes = new Map(stars.map(s => [s.x + ':' + s.y,
+        const visible = stars.filter(s => Scene.starVisible(s, L));
+        const boxes = new Map(visible.map(s => [s.x + ':' + s.y,
             Scene.starInkBox(s, glyphMetrics(s.char, fontSize), charW, lineH, fontSize * 0.8, gap)]));
-        const expected = SkyMap.visibleSegments(positions, p => Scene.starVisible(p, L))
-            .map(s => Scene.starEdge(boxes.get(s.a.x + ':' + s.a.y), boxes.get(s.b.x + ':' + s.b.y))).filter(Boolean);
+        const endBox = p => boxes.get(p.x + ':' + p.y) || Scene.cellCentre(p, charW, lineH);
+        const segs = SkyMap.visibleSegments(positions, p => Scene.starVisible(p, L));
+        const expected = segs.map(s => Scene.starEdge(endBox(s.a), endBox(s.b))).filter(Boolean);
+        // The contract under test: an edge with one hidden end is still drawn,
+        // and it runs to that end's cell centre for the mask to cut.
+        const oneEnded = segs.filter(s => Scene.starVisible(s.a, L) !== Scene.starVisible(s.b, L));
+        assert.ok(oneEnded.length > 0, `${w}x${h}: the fixture should have figures crossing the horizon or the moon`);
         const lines = svgDescendants(svg, 'line');
         assert.equal(lines.length, expected.length);
+        oneEnded.forEach((s) => {
+            const hidden = Scene.starVisible(s.a, L) ? s.b : s.a;
+            const c = Scene.cellCentre(hidden, charW, lineH);
+            assert.ok(lines.some((line) => {
+                const a = line.attributes;
+                return (Math.abs(+a.x1 - c.left) < 1e-6 && Math.abs(+a.y1 - c.top) < 1e-6) ||
+                       (Math.abs(+a.x2 - c.left) < 1e-6 && Math.abs(+a.y2 - c.top) < 1e-6);
+            }), `${w}x${h}: no line reaches the hidden endpoint at ${hidden.x}:${hidden.y}`);
+        });
         lines.forEach((line, i) => {
             const attrs = line.attributes;
             ['x1','y1','x2','y2'].forEach(key => near(+attrs[key], expected[i][key]));
@@ -80,7 +95,6 @@ test('constellations align on resize and orientation, mask foreground, and resto
         const masks = svgDescendants(svg, 'rect').map(r => r.attributes);
         const rects = masks.filter(r => r.fill === 'white');
         const cutouts = masks.filter(r => r.fill === 'black');
-        const visible = stars.filter(s => Scene.starVisible(s, L));
         assert.equal(cutouts.length, visible.length);
         cutouts.forEach((r, i) => {
             const box = boxes.get(visible[i].x + ':' + visible[i].y);
@@ -1324,12 +1338,13 @@ function figuresFor(page) {
     const positions = [];
     const stars = SkyMap.starCells({ date: new Date(HOVER_NOW), ...SkyMap.DEFAULT_VIEW,
         cols: L.cols, skyRows: L.fenceTop, constellations: true, positions });
-    const boxes = new Map(stars.map((s) => [s.x + ':' + s.y, Scene.starInkBox(
-        s, glyphMetrics(s.char, fontSize), charW, lineH, fontSize * 0.8,
-        Scene.starGap(charW, lineH))]));
+    const boxes = new Map(stars.filter((s) => Scene.starVisible(s, L)).map((s) => [s.x + ':' + s.y,
+        Scene.starInkBox(s, glyphMetrics(s.char, fontSize), charW, lineH, fontSize * 0.8,
+            Scene.starGap(charW, lineH))]));
+    const endBox = (p) => boxes.get(p.x + ':' + p.y) || Scene.cellCentre(p, charW, lineH);
     const byFigure = new Map(), out = [];
     SkyMap.visibleSegments(positions, (p) => Scene.starVisible(p, L)).forEach((seg) => {
-        const edge = Scene.starEdge(boxes.get(seg.a.x + ':' + seg.a.y), boxes.get(seg.b.x + ':' + seg.b.y));
+        const edge = Scene.starEdge(endBox(seg.a), endBox(seg.b));
         if (!edge) return;
         let f = byFigure.get(seg.figure);
         if (!f) {
@@ -1422,6 +1437,41 @@ test('hovering one segment lights the whole figure, and only that figure', () =>
     pointAtPixel(page, aim.x, aim.y + info.lineH * 3);
     assert.equal(page.byClass('constellation-on').length, 0);
     assert.equal(page.label().hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a line running behind the moon is not hit where the mask hides it', () => {
+    // Edges with one hidden end are drawn through to that end's cell so the
+    // mask can cut them — so the hit test has to stop where the mask does,
+    // or pointing at the moon would light a figure nobody can see there.
+    const page = constellationPage();
+    const info = figuresFor(page);
+    const L = info.layout;
+    const visible = (x, y) => Scene.starVisible({ x: Math.floor(x / info.charW), y: Math.floor(y / info.lineH) }, L);
+    const inMoon = (p) => p.x >= L.moonBox.left && p.x <= L.moonBox.right &&
+        p.y >= L.moonBox.top && p.y <= L.moonBox.bottom;
+    const positions = [];
+    SkyMap.starCells({ date: new Date(HOVER_NOW), ...SkyMap.DEFAULT_VIEW,
+        cols: L.cols, skyRows: L.fenceTop, constellations: true, positions });
+    const seg = SkyMap.visibleSegments(positions, (p) => Scene.starVisible(p, L))
+        .find((s) => (Scene.starVisible(s.a, L) && inMoon(s.b)) || (Scene.starVisible(s.b, L) && inMoon(s.a)));
+    assert.ok(seg, 'the fixture should have a figure with a star behind the moon');
+    const figure = info.figures.find((f) => f.figure === seg.figure);
+    const hiddenEnd = Scene.cellCentre(Scene.starVisible(seg.a, L) ? seg.b : seg.a, info.charW, info.lineH);
+    const edge = figure.edges.find((e) =>
+        (Math.abs(e.x2 - hiddenEnd.left) < 1e-6 && Math.abs(e.y2 - hiddenEnd.top) < 1e-6) ||
+        (Math.abs(e.x1 - hiddenEnd.left) < 1e-6 && Math.abs(e.y1 - hiddenEnd.top) < 1e-6));
+    assert.ok(edge, 'main.js should have drawn the edge through to the hidden star');
+    const from = Math.abs(edge.x1 - hiddenEnd.left) < 1e-6 ? { x: edge.x2, y: edge.y2 } : { x: edge.x1, y: edge.y1 };
+    const at = (t) => ({ x: from.x + t * (hiddenEnd.left - from.x), y: from.y + t * (hiddenEnd.top - from.y) });
+    // Squarely on the line, in the clear: it lights. Same line, under the
+    // moon: it does not, and the pointer is on the line both times.
+    const clear = at(0.05), masked = at(0.97);
+    assert.ok(visible(clear.x, clear.y) && !visible(masked.x, masked.y), 'the two samples should straddle the mask');
+    pointAtPixel(page, clear.x, clear.y);
+    assert.equal(page.byClass('constellation-on').length, 1, 'the visible part of the line answers the pointer');
+    pointAtPixel(page, masked.x, masked.y);
+    assert.equal(page.byClass('constellation-on').length, 0, 'the hidden part must not');
     assert.deepEqual(page.errors, []);
 });
 

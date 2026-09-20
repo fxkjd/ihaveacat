@@ -294,9 +294,21 @@ what you read and what the URL says can never drift apart.
 - `js/constellations.generated.js` loads before sky.js and contains 88 figures
   as catalogue-index pairs. HIP/HYG IDs and source files stay under tools/.
   See README.md for audits and regeneration, and the data licenses below.
-- `starCells` records optional endpoint positions before collision filtering.
-  `main.js` paints an SVG from those positions using its existing measured
-  character metrics. The mask reuses `Scene.starVisible`, including halos.
+- `starCells` records optional endpoint positions before collision filtering
+  **and before the horizon and grid tests** — a position is a projection, not
+  a promise that a star is drawn. `main.js` paints an SVG from those positions
+  using its existing measured character metrics. The mask reuses
+  `Scene.starVisible`, including halos.
+- **An edge is drawn when either end is a drawn star.** The other end may be
+  below the horizon, past the window's side, or behind the moon, cat or
+  fence: the line runs to that cell's centre (`Scene.cellCentre`, placed in
+  the visible star's measured text frame) and the mask or the sky's edge ends
+  it. Requiring both ends left holes in every figure that touched the fence
+  or the moon — Hydra lost most of itself and Virgo its arm across the moon
+  at Barcelona. Two hidden ends draw nothing. `starVisible` is bounded by
+  `fenceTop`, not `rows`, because a hidden end can now land in a lawn row.
+  The hover hit test refuses pointer positions in masked cells, since the
+  drawn edges run on under the mask.
   Sky/view/settings/layout changes update it; foreground animation never does.
   Each independent edge is trimmed to measured glyph ink bounds, using DOM
   Range text placement, a measured HTML baseline, and Canvas text metrics

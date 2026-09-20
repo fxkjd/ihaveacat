@@ -503,6 +503,17 @@
         };
     }
 
+    // Where an edge points when its far star is not on the page — below the
+    // horizon, past the window's side, or behind the moon, cat or fence. A
+    // zero-size box at the cell's centre, so starEdge trims nothing at that
+    // end: there is no glyph to stop short of, and the mask (or the sky's
+    // edge) ends the line instead. The nominal centre, not a measured one:
+    // no glyph was painted there to measure.
+    function cellCentre(p, charWidth, lineHeight) {
+        var cx = (p.x + 0.5) * charWidth, cy = (p.y + 0.5) * lineHeight;
+        return { left: cx, right: cx, top: cy, bottom: cy };
+    }
+
     // Intersect each centre-to-centre ray with its own glyph's ink box.
     // A butt-capped line stops at the boundary, not behind the ASCII glyph.
     function starEdge(a, b) {
@@ -541,9 +552,13 @@
      * drift silently: nothing would fail, a few stars would just be named
      * while not being on the page. occupied() stays private — callers need
      * the answer, not the halo rule.
+     *
+     * Bounded by the sky (fenceTop), not the grid: a constellation endpoint
+     * projected below the horizon can land in a lawn row, which no halo
+     * covers, and it must not count as a drawn star there.
      */
     function starVisible(s, L) {
-        return !!s && s.x >= 0 && s.x < L.cols && s.y >= 0 && s.y < L.rows &&
+        return !!s && s.x >= 0 && s.x < L.cols && s.y >= 0 && s.y < L.fenceTop &&
             !occupied(s.x, s.y, L);
     }
 
@@ -858,6 +873,7 @@
         STAR_GAP_RATIO: STAR_GAP_RATIO,
         starGap: starGap,
         starInkBox: starInkBox,
+        cellCentre: cellCentre,
         starEdge: starEdge,
         fireflyCell: fireflyCell,
         fenceRowText: fenceRowText,
