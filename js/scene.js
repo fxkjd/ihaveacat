@@ -465,14 +465,41 @@
         };
     }
 
+    /*
+     * How far a line keeps away from a star, in CSS pixels. Trimming a segment
+     * to the glyph's ink outline exactly — which is what a zero gap does —
+     * leaves a break of no width at all: against a `.` whose ink is a couple of
+     * pixels, a 0.75px line at a quarter opacity then reads as one stroke
+     * passing under the star rather than two stopping at it. The gap is what
+     * makes the termination visible.
+     *
+     * Scaled to the cell rather than fixed, so it holds at any font size, and
+     * floored at a whole pixel so it survives a very small one. Deliberately
+     * modest: the padded boxes of two stars in ADJACENT cells can overlap, and
+     * an edge between them is then dropped (see starEdge) — at this ratio only
+     * a horizontally adjacent pair of bright `*` glyphs is close enough.
+     */
+    var STAR_GAP_RATIO = 0.18;
+
+    function starGap(charWidth, lineHeight) {
+        return Math.max(1, Math.min(charWidth, lineHeight) * STAR_GAP_RATIO);
+    }
+
     // Font ink metrics and baseline are measured by main.js in CSS pixels.
     // Use the final painted cell, including its collision-winning glyph.
-    function starInkBox(star, metrics, charWidth, lineHeight, baseline) {
+    //
+    // `gap` grows the box on all four sides. ONE padded box per star then feeds
+    // both uses in main.js — the endpoint trim and the mask cutout — because
+    // they have to agree: the mask erases whatever crosses the hole, so a line
+    // trimmed less generously than the hole is punched would simply be eaten
+    // there instead of ending cleanly.
+    function starInkBox(star, metrics, charWidth, lineHeight, baseline, gap) {
+        var g = gap || 0;
         return {
-            left: star.x * charWidth - metrics.actualBoundingBoxLeft,
-            right: star.x * charWidth + metrics.actualBoundingBoxRight,
-            top: star.y * lineHeight + baseline - metrics.actualBoundingBoxAscent,
-            bottom: star.y * lineHeight + baseline + metrics.actualBoundingBoxDescent
+            left: star.x * charWidth - metrics.actualBoundingBoxLeft - g,
+            right: star.x * charWidth + metrics.actualBoundingBoxRight + g,
+            top: star.y * lineHeight + baseline - metrics.actualBoundingBoxAscent - g,
+            bottom: star.y * lineHeight + baseline + metrics.actualBoundingBoxDescent + g
         };
     }
 
@@ -828,6 +855,8 @@
         meteorCells: meteorCells,
         meteorAlive: meteorAlive,
         starVisible: starVisible,
+        STAR_GAP_RATIO: STAR_GAP_RATIO,
+        starGap: starGap,
         starInkBox: starInkBox,
         starEdge: starEdge,
         fireflyCell: fireflyCell,

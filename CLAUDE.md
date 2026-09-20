@@ -48,7 +48,10 @@ All of the above are enforced by tests.
   plus textbook sidereal-time and alt/az math (Meeus), a 1°-per-column /
   2°-per-row projection with the fence as the horizon, and `parseView` for the
   URL hash. It also carries `NAMES`/`IDS` — parallel to the catalog by index,
-  covering every star down to `SKY_MAG_LIMIT` — and `starLabel(index)`.
+  covering every star down to `SKY_MAG_LIMIT` — plus `EXTRA_NAMES`/`EXTRA_IDS`,
+  keyed by index, for the constellation endpoints below it, and
+  `starLabel(index)` over both. `visibleSegments` tags each edge with the
+  figure that drew it, and `figureName(i)` spells that figure out.
   Pure like moon.js: the **date is an argument** — no clock, no
   randomness, no DOM (enforced by a test). The catalog is the map, not the
   view: seasons and hours come from the sidereal formula, and the data itself
@@ -300,6 +303,28 @@ what you read and what the URL says can never drift apart.
   (measurement only). Static glyph cutouts also protect stars crossed by an
   unrelated edge. Lines share the dim star color/opacity tokens and never
   inherit twinkle animations or animated mask opacity.
+- **The ink box is padded by `Scene.starGap` before either use**, and the same
+  padded box is trimmed against and punched out of the mask. Trimmed to the
+  outline exactly — which is what a zero gap gives — the break has no width at
+  all, and a 0.75px stroke at a quarter opacity then reads as one line passing
+  *under* the star rather than two stopping at it. The two uses have to agree:
+  the mask erases whatever crosses its hole, so a line trimmed less generously
+  than the hole is punched would be eaten there instead of ending cleanly.
+  `STAR_GAP_RATIO` (0.18 of the narrower cell dimension, floored at a pixel) is
+  the knob; at that size no segment is lost at any viewport, which is the
+  constraint — two stars in adjacent cells must still be joined.
+- **Each figure is its own `<g class="constellation">`** inside the masked
+  group, so hovering one line can light all of them with a single class write.
+  `constellation-on` is the lit state: the twinkle keyframe's bright end, i.e.
+  the same white at full opacity. Nothing new enters the palette and nothing
+  transitions.
+- **The figure hit test is geometric**, like the star one and for a second
+  reason on top of it: the overlay is `pointer-events: none` behind the scene
+  — it has to be, or it would swallow the mousemove that names the stars — so
+  its lines never see a pointer. `main.js` keeps the drawn edges and measures
+  the pointer's distance to them. A highlight cannot outlive a repaint, which
+  discards the `<g>` nodes, so `paintConstellations` puts it back and drops the
+  label's identity key before rebuilding.
 - The star-names toggle is **session-only and deliberately not in the
   fragment**. The fragment is a shareable description of *what is drawn*; a
   display preference is neither shareable nor a property of the sky. Having no
@@ -316,10 +341,20 @@ what you read and what the URL says can never drift apart.
 The source is [`hyg/CURRENT/hygdata_v41.csv`](https://github.com/astronexus/HYG-Database/blob/c7f7f883fe678cc7680169a50ccd7dcc49b060ce/hyg/CURRENT/hygdata_v41.csv)
 at revision `c7f7f883fe678cc7680169a50ccd7dcc49b060ce`.
 The extracted records in `tools/data/hyg-v41-subset.json`, the generated star
-catalogue in `js/sky.js`, and its existing name tables retain that license.
+catalogue in `js/sky.js`, and both of its name tables retain that license.
 Changes: selection at magnitude <= 5 plus constellation-required endpoints,
-RA conversion to degrees, rounding to tenths, ordering and packing. The
-development subset retains original precision and IDs for regeneration.
+RA conversion to degrees, rounding to tenths, ordering and packing; the
+`proper`, `bayer`, `flam`, `con`, `hd`, `hr` and `gl` fields are carried over
+verbatim and spelled out into names. The development subset retains original
+precision and IDs for regeneration.
+
+The Greek letters and IAU genitives that spell a Bayer designation out are in
+[`tools/data/designations.json`](tools/data/designations.json). They are not
+from HYG: they are the IAU's own list, adopted at the 1922 Rome General
+Assembly and unchanged in every star atlas since. Authored rather than
+derived — a genitive is a fact about Latin, not something the coordinates can
+be asked for — and checked against the 343 names already shipped before any
+new one is written.
 
 **Constellation figures:** Copyright 2015–2025 Dominic Ford, from
 [constellation-stick-figures](https://github.com/dcf21/constellation-stick-figures/tree/75d29c207bbd752023c447ddd1f9f4ff0eb47538).
@@ -347,7 +382,8 @@ HD 98231 to the existing HYG 118742 component, without proximity matching.
 
 Hovering a star names it — the proper name where the star has one, otherwise
 the Bayer designation spelled out, otherwise the catalogue number. Off by
-default, behind the panel's `name` toggle.
+default, behind the panel's `name` toggle. With constellations on, hovering a
+line names the figure the same way and lights the whole of it.
 
 **The catalogue number appears only where the label is not really a name.**
 `Vega` needs no HD number beside it; `Alpha Lupi` does, because a designation
@@ -394,9 +430,29 @@ rest are a number standing alone.
 - `render()` ends in a *condition*, not an early return. The hoisted cell
   metrics must be assigned on every resize, including one that keeps the same
   cell count — an early return there once left them stale.
-- The names table stops at `SKY_MAG_LIMIT` rather than covering all 1,637
+- The dense table stops at `SKY_MAG_LIMIT` rather than covering all 1,657
   stars, which keeps it at ~9 KB. Raising the limit fails a test rather than
-  silently producing anonymous stars.
+  silently producing anonymous stars. The constellation endpoints below the
+  limit — 438 of them, reaching magnitude 6.5 — are named by a second,
+  index-keyed table instead of extending the first: that way the invariant
+  above stays pinned on exactly what a plain sky names, and the ~900 catalogue
+  entries no figure ever touches cost nothing. A star nothing draws stays
+  unnamed, and a test pins that too.
+- **Both lookups go through `hasOwnProperty`.** A plain `NAMES[index]` answers
+  `'constructor'` with a Function and calls it a star, and the index reaches
+  `starLabel` from a hovered cell, so a string is not hypothetical.
+- **The name is the naming setting's, the highlight is the constellation
+  setting's.** Hovering a figure writes its name into the same `.star-name`
+  label, gated on the `name` toggle; the lines light up on the constellation
+  setting alone, because they are already on screen and asking twice for the
+  same thing would be asking twice. Where both answer — near the end of a
+  figure — the star wins the label and the figure still lights.
+- The naming rule lives once, in `tools/catalog.js`: proper name, else the
+  Bayer designation spelled out from `tools/data/designations.json`, else
+  Flamsteed, else the catalogue number standing in as the name. Generation
+  **re-derives all 343 shipped names and refuses to write the second table if
+  any of them has drifted**, so the two halves cannot be named by two
+  different authorities.
 - Two harness traps this uncovered: the stub `matchMedia` used to ignore its
   argument, so `(hover: hover)` answered with the reduced-motion state; and at
   the default 1400×900 the grid *exactly* fills the window, so `rect.top` is 0
