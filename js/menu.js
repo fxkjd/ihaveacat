@@ -24,6 +24,8 @@
     var ROSE = ['n', 'e', 's', 'w'];
     var TOGGLES = ['constellations', 'name'];
     var CONSTELLATIONS_KEY = 'ihaveacat.constellations';
+    var VIEW_KEY = 'ihaveacat.view';
+    var NAMES_KEY = 'ihaveacat.names';
     var TOGGLE_ON = '(x)', TOGGLE_OFF = '( )';
     var TITLE = 'settings';
     var GEAR = '⚙︎';
@@ -51,14 +53,17 @@
         out.push([]);
         FIELDS.forEach(function (name) {
             out.push([
-                label(' ' + name + '  ['),
+                label(' ' + name + ' '),
+                { stepField: name, delta: -1, text: '▼', cls: 'menu-step menu-label' },
+                label(' ['),
                 {
                     field: name,
                     value: String(f[name] === undefined ? '' : f[name]),
                     cols: FIELD_COLS,
                     cls: 'menu-field'
                 },
-                label(' ]')
+                label(' ] '),
+                { stepField: name, delta: 1, text: '▲', cls: 'menu-step menu-label' }
             ]);
         });
         out.push([label(' dir  ')].concat(ROSE.map(function (d) {
@@ -110,18 +115,28 @@
 
     /*
      * The wiring. Everything above this line is pure; everything below it
-     * touches the page and never the sky — the only thing it writes is the
-     * URL fragment.
+     * touches the page and never the sky. The view travels through the URL
+     * fragment, and preferences are saved in guarded localStorage.
      */
     function install(doc, win) {
         var sky = win.SkyMap;
-        var view = sky.parseView(win.location ? win.location.hash : '');
-        var inputs = {}, dirs = {}, toggles = {};
-        // Names remain page-local; constellations persist separately from the view.
+        var hash = win.location ? win.location.hash : '';
         var settings = { name: false, constellations: false };
-        // Existing preferences are page-local. This requested persistent
-        // preference uses one key; blocked storage (including file://) is OK.
+        // Shared URLs win over the saved vantage. Blocked storage is harmless.
+        try {
+            if (!hash) hash = win.localStorage.getItem(VIEW_KEY) || '';
+        } catch (e) {}
+        try { settings.name = win.localStorage.getItem(NAMES_KEY) === 'true'; } catch (e) {}
         try { settings.constellations = win.localStorage.getItem(CONSTELLATIONS_KEY) === 'true'; } catch (e) {}
+        var view = sky.parseView(hash);
+        if (hash && win.location && !win.location.hash) {
+            win.location.hash = sky.formatView(view);
+        }
+        var inputs = {}, dirs = {}, toggles = {};
+
+        function saveView() {
+            try { win.localStorage.setItem(VIEW_KEY, sky.formatView(view)); } catch (e) {}
+        }
 
         function within(n, limit) { return isFinite(n) && n >= -limit && n <= limit; }
 
@@ -178,6 +193,7 @@
                 return;
             }
             view = sky.parseView(hash);
+            saveView();
             sync(true);
             if (win.location.hash !== hash) win.location.hash = hash;
         }
@@ -210,11 +226,19 @@
 
         function setToggle(name) {
             settings[name] = !settings[name];
-            if (name === 'constellations') {
-                try { win.localStorage.setItem(CONSTELLATIONS_KEY, String(settings.constellations)); } catch (e) {}
-            }
+            try {
+                win.localStorage.setItem(name === 'constellations' ? CONSTELLATIONS_KEY : NAMES_KEY, String(settings[name]));
+            } catch (e) {}
             sync(true);
             announce();
+        }
+
+        function stepField(name, delta) {
+            commitFields();
+            var next = { lat: view.lat, lon: view.lon, azimuth: view.azimuth };
+            var limit = name === 'lat' ? sky.LAT_LIMIT : sky.LON_LIMIT;
+            next[name] = Math.max(-limit, Math.min(limit, next[name] + delta));
+            commitView(next);
         }
 
         function setDir(letter) {
@@ -268,6 +292,14 @@
                 el.addEventListener('keydown', onKey);
                 el.addEventListener('blur', commitFields);
                 inputs[seg.field] = el;
+            } else if (seg.stepField) {
+                el = doc.createElement('button');
+                el.type = 'button';
+                el.textContent = seg.text;
+                el.setAttribute('aria-label', (seg.delta < 0 ? 'decrease ' : 'increase ') +
+                    (seg.stepField === 'lat' ? 'latitude' : 'longitude'));
+                el.addEventListener('click', function () { stepField(seg.stepField, seg.delta); });
+                el.addEventListener('keydown', onButtonKey);
             } else if (seg.dir) {
                 el = doc.createElement('button');
                 el.type = 'button';
@@ -340,6 +372,7 @@
         doc.body.appendChild(gear);
         doc.body.appendChild(panel);
         sync(true);
+        saveView();
         announce();
 
         /*
@@ -350,6 +383,7 @@
          */
         win.addEventListener('hashchange', function () {
             view = sky.parseView(win.location.hash);
+            saveView();
             sync(false);
         });
     }

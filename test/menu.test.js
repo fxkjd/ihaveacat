@@ -24,8 +24,8 @@ test('the panel is drawn exactly as designed', () => {
     assert.deepEqual(textOf(BCN), [
         '     settings',
         '',
-        ' lat  [  41.39 ]',
-        ' lon  [   2.17 ]',
+        ' lat ▼ [  41.39 ] ▲',
+        ' lon ▼ [   2.17 ] ▲',
         ' dir   n  e (s) w ',
         '',
         ' constellations ( )',
@@ -58,7 +58,8 @@ test('the toggle keeps the panel label column', () => {
     // compass slot do.
     const text = textOf(BCN);
     const [lat, dir, name] = [text[2], text[4], text[7]];
-    assert.equal(lat.indexOf('['), 6);
+    assert.equal(lat.indexOf('▼'), 5);
+    assert.equal(lat.indexOf('['), 7);
     assert.equal(dir.indexOf(' n '), 6);
     assert.equal(name.indexOf('( )'), 6);
 });
@@ -78,8 +79,8 @@ test('the longest value a fragment can hold still fits between the brackets', ()
         assert.ok(v.length <= Menu.FIELD_COLS, v);
     });
     const rows = textOf({ lat: '-89.99', lon: '-179.99', dir: 'w' });
-    assert.equal(rows[2], ' lat  [ -89.99 ]');
-    assert.equal(rows[3], ' lon  [-179.99 ]');
+    assert.equal(rows[2], ' lat ▼ [ -89.99 ] ▲');
+    assert.equal(rows[3], ' lon ▼ [-179.99 ] ▲');
     // Every value row is the same width whatever the value.
     assert.equal(rows[2].length, textOf(BCN)[2].length);
 });

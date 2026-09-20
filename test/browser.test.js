@@ -1606,3 +1606,73 @@ test('a pointer that cannot hover lights nothing', () => {
     assert.equal(page.label().hidden, true);
     assert.deepEqual(page.errors, []);
 });
+
+
+test('all settings survive reloads and shared URLs override the saved vantage', () => {
+    const values = new Map();
+    const storage = { getItem(k) { return values.get(k); }, setItem(k, v) { values.set(k, v); } };
+    const first = loadPage({ storage, reducedMotion: true });
+    first.field('lon').value = '151.21';
+    typeInto(first, 'lat', '-33.87');
+    first.dir('n').click();
+    first.toggle().click();
+    first.constellationToggle().click();
+    const next = loadPage({ storage, reducedMotion: true });
+    next.tick();
+    first.tick();
+    assert.equal(next.hash(), '#lat=-33.87&lon=151.21&dir=n');
+    assert.equal(next.field('lat').value, '-33.87');
+    assert.equal(next.toggle().attributes['aria-pressed'], 'true');
+    assert.equal(next.constellationToggle().attributes['aria-pressed'], 'true');
+    assert.equal(skyOf(next), skyOf(first));
+    const shared = loadPage({ storage, hash: '#lat=10&lon=20&dir=w' });
+    assert.equal(shared.field('lat').value, '10');
+    assert.equal(shared.dir('w').attributes['aria-pressed'], 'true');
+    shared.toggle().click();
+    const later = loadPage({ storage });
+    assert.equal(later.field('lat').value, '10');
+    assert.equal(later.toggle().attributes['aria-pressed'], 'false');
+    assert.deepEqual(next.errors, []);
+});
+
+test('coordinate arrows step by one degree and stop at both limits', () => {
+    const page = loadPage();
+    const arrow = (name) => page.byClass('menu-step').find(b => b.attributes['aria-label'] === name);
+    arrow('decrease latitude').click();
+    assert.equal(page.field('lat').value, '40.39');
+    arrow('increase latitude').click();
+    assert.equal(page.field('lat').value, '41.39');
+    arrow('increase longitude').click();
+    assert.equal(page.field('lon').value, '3.17');
+    arrow('decrease longitude').click();
+    assert.equal(page.field('lon').value, '2.17');
+    for (const [field, label, limit] of [['lat', 'latitude', 90], ['lon', 'longitude', 180]]) {
+        for (const sign of [-1, 1]) {
+            typeInto(page, field, String(sign * (limit - 0.5)));
+            const button = arrow((sign < 0 ? 'decrease ' : 'increase ') + label);
+            button.click();
+            assert.equal(page.field(field).value, String(sign * limit));
+            const hash = page.hash();
+            button.click();
+            assert.equal(page.hash(), hash);
+        }
+    }
+    assert.deepEqual(page.errors, []);
+});
+
+test('unavailable or corrupt storage leaves settings usable', () => {
+    for (const storage of [
+        { getItem() { throw Error('blocked'); }, setItem() { throw Error('blocked'); } },
+        { getItem() { return 'garbage'; }, setItem() {} }
+    ]) {
+        const page = loadPage({ storage });
+        assert.equal(page.field('lat').value, '41.39');
+        typeInto(page, 'lat', '25');
+        page.toggle().click();
+        page.dir('e').click();
+        page.tick();
+        assert.equal(page.hash(), '#lat=25&lon=2.17&dir=e');
+        assert.equal(page.toggle().attributes['aria-pressed'], 'true');
+        assert.deepEqual(page.errors, []);
+    }
+});

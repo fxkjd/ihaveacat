@@ -11,8 +11,9 @@ brightens the whole figure to the star colour at full opacity; with the
 **name** setting on it also names it, in the same label the stars use, and a
 star under the pointer wins that label from its own figure. The preference
 survives reloads using `localStorage` (`ihaveacat.constellations`); it defaults
-off and still works when storage is unavailable. The existing star-name
-preference remains page-local. No network data fetch or build step is needed
+off and still works when storage is unavailable. Coordinates, direction, and star names also persist locally. A shared URL
+overrides the saved vantage. The latitude and longitude arrows change the value
+by 1° per click, stopping at ±90° and ±180° respectively. No network data fetch or build step is needed
 to open the page, including over `file://`.
 
 ## Coverage and data regeneration

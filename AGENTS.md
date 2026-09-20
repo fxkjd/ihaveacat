@@ -77,7 +77,7 @@ All of the above are enforced by tests.
   with no DOM at all); `install()` is the wiring. It writes the URL fragment and
   **there is no wire to `main.js` on purpose** — the panel, the address bar, a
   shared link and the Back button are then one code path, and the URL always
-  says what is drawn. The one setting that cannot travel in the fragment is
+  says what is drawn. Display settings that do not travel in the fragment are
   announced as a `CustomEvent` on `window` instead, which is the same idea: a
   channel the browser owns, not a reference between the two files. It builds
   itself from script, so nothing appears on the no-JS page that could not work.
@@ -290,7 +290,12 @@ what you read and what the URL says can never drift apart.
   fragment *is* the state, and it is already shareable.
 - The **constellations** preference defaults off and persists in the guarded
   `localStorage` key `ihaveacat.constellations`. It shares `settingschange`
-  with names; only the constellation preference survives a reload.
+  with names. Names persist in `ihaveacat.names`, and the formatted vantage
+  in `ihaveacat.view`. A nonempty URL fragment takes precedence over the saved
+  vantage; storage failures never prevent changing settings.
+- Coordinate rows use `lat ▼ [number] ▲` (and `lon`). Each arrow steps by 1°
+  and clamps at ±90° latitude or ±180° longitude; typed invalid values are
+  still rejected.
 - `js/constellations.generated.js` loads before sky.js and contains 88 figures
   as catalogue-index pairs. HIP/HYG IDs and source files stay under tools/.
   See README.md for audits and regeneration, and the data licenses below.
@@ -339,7 +344,7 @@ what you read and what the URL says can never drift apart.
   the pointer's distance to them. A highlight cannot outlive a repaint, which
   discards the `<g>` nodes, so `paintConstellations` puts it back and drops the
   label's identity key before rebuilding.
-- The star-names toggle is **session-only and deliberately not in the
+- The star-names toggle is **persistent locally and deliberately not in the
   fragment**. The fragment is a shareable description of *what is drawn*; a
   display preference is neither shareable nor a property of the sky. Having no
   address bar to travel through, it is announced as a `CustomEvent` on

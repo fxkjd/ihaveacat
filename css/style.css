@@ -257,7 +257,7 @@
      * white-space: pre because a <button> does not reliably inherit it, and
      * ' n ' collapsing to 'n' would shift the row two columns per button.
      */
-    .menu-dir {
+    .menu-dir, .menu-step {
 	position: relative;
 	font: inherit;
 	line-height: inherit;
@@ -285,7 +285,8 @@
 	bottom: -0.7em;
 	left: 0;
     }
-    .menu-dir:hover, .menu-dir:focus-visible {
+    .menu-dir:hover, .menu-dir:focus-visible,
+    .menu-step:hover, .menu-step:focus-visible {
 	color: #F5F3C3;
     }
     .menu-dir-on {
@@ -395,7 +396,7 @@
 	}
 	/* This block only ever killed `animation`; the menu's hover fades are
 	   transitions, which it would otherwise leave running. */
-	.menu-gear, .menu-dir, .menu-toggle {
+	.menu-gear, .menu-dir, .menu-step, .menu-toggle {
 	    transition: none;
 	}
     }
