@@ -48,7 +48,9 @@ All of the above are enforced by tests.
   plus textbook sidereal-time and alt/az math (Meeus), a 1°-per-column /
   2°-per-row projection with the fence as the horizon, and `parseView` for the
   URL hash. It also carries `NAMES`/`IDS` — parallel to the catalog by index,
-  covering every star down to `SKY_MAG_LIMIT` — and `starLabel(index)`.
+  covering every star down to `SKY_MAG_LIMIT` — plus `EXTRA_NAMES`/`EXTRA_IDS`,
+  keyed by index, for the constellation endpoints below it, and
+  `starLabel(index)` over both.
   Pure like moon.js: the **date is an argument** — no clock, no
   randomness, no DOM (enforced by a test). The catalog is the map, not the
   view: seasons and hours come from the sidereal formula, and the data itself
@@ -316,10 +318,20 @@ what you read and what the URL says can never drift apart.
 The source is [`hyg/CURRENT/hygdata_v41.csv`](https://github.com/astronexus/HYG-Database/blob/c7f7f883fe678cc7680169a50ccd7dcc49b060ce/hyg/CURRENT/hygdata_v41.csv)
 at revision `c7f7f883fe678cc7680169a50ccd7dcc49b060ce`.
 The extracted records in `tools/data/hyg-v41-subset.json`, the generated star
-catalogue in `js/sky.js`, and its existing name tables retain that license.
+catalogue in `js/sky.js`, and both of its name tables retain that license.
 Changes: selection at magnitude <= 5 plus constellation-required endpoints,
-RA conversion to degrees, rounding to tenths, ordering and packing. The
-development subset retains original precision and IDs for regeneration.
+RA conversion to degrees, rounding to tenths, ordering and packing; the
+`proper`, `bayer`, `flam`, `con`, `hd`, `hr` and `gl` fields are carried over
+verbatim and spelled out into names. The development subset retains original
+precision and IDs for regeneration.
+
+The Greek letters and IAU genitives that spell a Bayer designation out are in
+[`tools/data/designations.json`](tools/data/designations.json). They are not
+from HYG: they are the IAU's own list, adopted at the 1922 Rome General
+Assembly and unchanged in every star atlas since. Authored rather than
+derived — a genitive is a fact about Latin, not something the coordinates can
+be asked for — and checked against the 343 names already shipped before any
+new one is written.
 
 **Constellation figures:** Copyright 2015–2025 Dominic Ford, from
 [constellation-stick-figures](https://github.com/dcf21/constellation-stick-figures/tree/75d29c207bbd752023c447ddd1f9f4ff0eb47538).
@@ -394,9 +406,23 @@ rest are a number standing alone.
 - `render()` ends in a *condition*, not an early return. The hoisted cell
   metrics must be assigned on every resize, including one that keeps the same
   cell count — an early return there once left them stale.
-- The names table stops at `SKY_MAG_LIMIT` rather than covering all 1,637
+- The dense table stops at `SKY_MAG_LIMIT` rather than covering all 1,657
   stars, which keeps it at ~9 KB. Raising the limit fails a test rather than
-  silently producing anonymous stars.
+  silently producing anonymous stars. The constellation endpoints below the
+  limit — 438 of them, reaching magnitude 6.5 — are named by a second,
+  index-keyed table instead of extending the first: that way the invariant
+  above stays pinned on exactly what a plain sky names, and the ~900 catalogue
+  entries no figure ever touches cost nothing. A star nothing draws stays
+  unnamed, and a test pins that too.
+- **Both lookups go through `hasOwnProperty`.** A plain `NAMES[index]` answers
+  `'constructor'` with a Function and calls it a star, and the index reaches
+  `starLabel` from a hovered cell, so a string is not hypothetical.
+- The naming rule lives once, in `tools/catalog.js`: proper name, else the
+  Bayer designation spelled out from `tools/data/designations.json`, else
+  Flamsteed, else the catalogue number standing in as the name. Generation
+  **re-derives all 343 shipped names and refuses to write the second table if
+  any of them has drifted**, so the two halves cannot be named by two
+  different authorities.
 - Two harness traps this uncovered: the stub `matchMedia` used to ignore its
   argument, so `(hover: hover)` answered with the reduced-motion state; and at
   the default 1400×900 the grid *exactly* fills the window, so `rect.top` is 0

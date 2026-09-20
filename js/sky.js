@@ -258,9 +258,9 @@
      * HD 82668 must not repeat it. So an id is present exactly for the Bayer
      * and Flamsteed designations.
      *
-     * The table stops at SKY_MAG_LIMIT rather than covering all 1,637 stars,
-     * which keeps it at ~9 KB. Raising that limit is caught by a test rather
-     * than silently producing anonymous stars.
+     * The dense table stops at SKY_MAG_LIMIT rather than covering all 1,657
+     * stars, which keeps it at ~9 KB. Raising that limit is caught by a test
+     * rather than silently producing anonymous stars.
      */
 
     var NAMES = [
@@ -340,6 +340,247 @@
         "HD 102249", "", "", "HD 112985", "HD 125238", "HD 127665", "HD 136422", "HD 139063", "", "HD 152334",
         "HD 158094", "HD 160635", "HD 170153", "HD 190248", "", "", "HD 217675"
     ];
+
+    /*
+     * And the stars past that limit which the constellation setting draws. The
+     * figures reach down to magnitude 6.5, so turning them on used to add
+     * hundreds of stars that hovered as nothing at all — visibly there, and
+     * nameless.
+     *
+     * Kept apart from the dense tables instead of extending them, for two
+     * reasons: keyed by index, this table pays nothing for the ~900 catalogue
+     * entries no figure ever touches; and the invariant above stays pinned on
+     * exactly what a plain sky names, so raising SKY_MAG_LIMIT still fails a
+     * test rather than quietly borrowing a name from here.
+     *
+     * Same source, same licence and the same naming rule as NAMES/IDS —
+     * literally the same code path in tools/catalog.js, which re-derives all
+     * 343 above and refuses to write this table if any of them has drifted.
+     */
+    var EXTRA_NAMES = {
+        "344": "Baten Kaitos", "345": "Chi Eridani", "346": "Tau-4 Eridani", "347": "Xi Tauri",
+        "348": "Ran", "350": "Prima Hyadum", "351": "Pi-4 Orionis", "352": "Pi-5 Orionis",
+        "353": "Saclateni", "354": "Eta Leporis", "355": "Delta Aurigae", "357": "Alpha Pyxidis",
+        "358": "23 Ursae Majoris", "360": "Taiyangshou", "361": "Thuban", "362": "109 Virginis",
+        "363": "Nusakan", "364": "Tau Librae", "365": "Beta Serpentis", "366": "Epsilon Serpentis",
+        "367": "Gamma Herculis", "368": "Grumium", "369": "Xi Herculis", "370": "Theta Arae",
+        "372": "Delta Sagittae", "373": "Alshain", "374": "Beta Indi", "377": "Nashira",
+        "378": "Nu Octantis", "379": "Zeta-1 Aquarii", "380": "Lambda Aquarii", "381": "88 Aquarii",
+        "382": "Gamma Piscium", "383": "Alrescha", "384": "Miram", "385": "Misam", "386": "Dalim",
+        "387": "Beta Reticuli", "388": "Atik", "390": "Secunda Hyadum", "392": "Theemin",
+        "393": "Beta Doradus", "395": "Delta Leporis", "396": "Beta Monocerotis",
+        "397": "Gamma-2 Volantis", "398": "Iota Geminorum", "399": "HD 61555",
+        "400": "Beta Volantis", "404": "38 Lyncis", "405": "Upsilon Ursae Majoris",
+        "406": "Mu Hydrae", "410": "Praecipua", "411": "HD 94510", "412": "Giausar",
+        "413": "Gamma Muscae", "414": "Phi Centauri", "415": "Zeta Bootis", "416": "Alpha Apodis",
+        "417": "Delta Serpentis", "418": "Gamma Coronae Borealis", "419": "Marfik",
+        "420": "Eta Arae", "421": "Iota Herculis", "422": "Gamma Ophiuchi",
+        "423": "Omicron Herculis", "424": "Polis", "426": "Kappa Cygni", "427": "Iota-2 Cygni",
+        "428": "Epsilon Draconis", "430": "Sualocin", "431": "Albali", "432": "Zeta Capricorni",
+        "433": "Iota Pegasi", "434": "Alpha Lacertae", "435": "Lambda Andromedae",
+        "436": "Epsilon Phoenicis", "438": "Mu Andromedae", "439": "Wurren",
+        "440": "Delta Phoenicis", "441": "Mesarthim", "442": "Tau Persei", "443": "Azha",
+        "445": "Nu Tauri", "446": "Alpha Horologii", "447": "Nu Eridani", "449": "Epsilon Columbae",
+        "450": "Beta Pictoris", "451": "Delta Columbae", "452": "Omicron-1 Canis Majoris",
+        "453": "Alpha Monocerotis", "455": "3 Puppis", "457": "Asellus Australis",
+        "459": "Theta Hydrae", "460": "Ukdah", "461": "Rasalas", "462": "HD 88955",
+        "463": "HD 96918", "465": "Zaniah", "466": "Sigma Centauri", "467": "Kappa Draconis",
+        "469": "HD 117440", "470": "Upsilon-1 Centauri", "471": "Mu Virginis",
+        "474": "Zubenelhakrabi", "475": "Gamma Serpentis", "476": "Iklil", "479": "Tau Herculis",
+        "480": "Gamma Apodis", "481": "Epsilon Herculis", "482": "Theta Herculis",
+        "485": "Alpha Scuti", "487": "Eta Aquilae", "488": "Eta Cygni", "489": "Nu Cygni",
+        "490": "Kitalpha", "491": "Sadachbia", "493": "Phi Persei", "496": "Gamma Trianguli",
+        "497": "Menkib", "498": "48 Persei", "499": "Beid", "500": "Beemim", "501": "Mu Eridani",
+        "502": "Beta Camelopardalis", "504": "Eta Columbae", "505": "Gamma Monocerotis",
+        "506": "Nu-2 Canis Majoris", "507": "Mekbuda", "509": "Delta Volantis",
+        "510": "Beta Pyxidis", "511": "Iota Cancri", "512": "Gamma Pyxidis", "513": "HD 76943",
+        "514": "Alpha Volantis", "517": "Iota Leonis", "518": "Nu Virginis", "519": "Alchiba",
+        "520": "Rho Centauri", "523": "Theta Bootis", "525": "Chi Lupi", "526": "Theta Draconis",
+        "527": "Jabbah", "528": "Gamma-2 Normae", "530": "Zeta Pavonis", "531": "Epsilon Aquilae",
+        "532": "12 Aquilae", "535": "Epsilon Pavonis", "536": "32 Cygni", "538": "Aldulfin",
+        "540": "Delta-1 Gruis", "541": "Eta Aquarii", "542": "Lambda Pegasi", "543": "Gamma Tucanae",
+        "544": "98 Aquarii", "545": "Omega Piscium", "547": "Zeta Andromedae", "550": "Delta Ceti",
+        "552": "Iota Eridani", "553": "Theta Persei", "554": "Tau-3 Eridani", "555": "Iota Persei",
+        "558": "Mu Persei", "559": "Omicron-2 Orionis", "562": "Mu Orionis", "563": "Nu Geminorum",
+        "564": "Theta Canis Majoris", "565": "Muliphein", "566": "Upsilon Geminorum",
+        "568": "Alpha Chamaeleontis", "570": "Delta Hydrae", "573": "Zhang",
+        "574": "Gamma Chamaeleontis", "575": "Alkes", "576": "Sigma Leonis", "577": "Gamma Crateris",
+        "579": "Omicron Virginis", "581": "Epsilon Muscae", "584": "Syrma", "585": "Psi Centauri",
+        "589": "Beta Circini", "590": "Theta Coronae Borealis", "591": "Epsilon Trianguli Australis",
+        "592": "Gudja", "594": "Epsilon Coronae Borealis", "595": "Epsilon-1 Arae",
+        "596": "Zeta Telescopii", "598": "Meridiana", "599": "Beta Coronae Australis",
+        "601": "Psi Capricorni", "602": "Omega Capricorni", "603": "Theta Capricorni",
+        "605": "Kappa Pegasi", "606": "1 Lacertae", "607": "Delta Cephei", "609": "Beta Octantis",
+        "610": "Tau-2 Aquarii", "611": "Zeta Gruis", "612": "Iota Piscium", "613": "Zeta Tucanae",
+        "616": "Kappa Eridani", "617": "Pi Ceti", "619": "HD 21291", "620": "Tau-6 Eridani",
+        "621": "HD 24160", "624": "1 Geminorum", "625": "Delta Monocerotis",
+        "630": "Beta Leonis Minoris", "631": "Beta Chamaeleontis", "632": "Chara",
+        "633": "Beta Comae Berenices", "636": "Tau Virginis", "638": "Xuange", "640": "Phi Herculis",
+        "641": "Chi Ophiuchi", "643": "Sigma Herculis", "645": "Beta Apodis",
+        "646": "Epsilon Ursae Minoris", "647": "Rho Herculis", "650": "Phi Draconis",
+        "652": "Beta Scuti", "653": "Lambda Pavonis", "654": "Delta-2 Lyrae",
+        "655": "Gamma Coronae Australis", "656": "Theta Cephei", "659": "Gamma Pavonis",
+        "660": "Mu Cephei", "662": "Epsilon Cephei", "663": "Ancha",
+        "664": "Epsilon Piscis Austrini", "666": "Delta Piscis Austrini", "667": "Phi Aquarii",
+        "668": "Psi-1 Aquarii", "669": "Kappa Andromedae", "670": "Pi Andromedae",
+        "671": "Epsilon Andromedae", "672": "Alpha Sculptoris", "673": "Epsilon Piscium",
+        "674": "Phi Andromedae", "677": "Torcular", "678": "Xi-2 Ceti", "679": "Mu Ceti",
+        "680": "82 G. Eri", "681": "Tau-5 Eridani", "683": "10 Tauri", "686": "Lambda Persei",
+        "688": "Gamma Doradus", "695": "Tau Tauri", "696": "Alpha Camelopardalis",
+        "698": "Lambda Leporis", "700": "Delta Doradus", "706": "Alsciaukat", "708": "Eta Hydrae",
+        "710": "Acubens", "712": "Alterf", "715": "Alpha Antliae", "720": "Beta Hydrae",
+        "726": "Diadem", "731": "Delta Octantis", "737": "Zeta Ursae Minoris", "739": "Phi Ophiuchi",
+        "743": "45 Ophiuchi", "746": "Pi Pavonis", "748": "Zeta-1 Lyrae", "754": "Gamma-2 Delphini",
+        "759": "Iota Aquarii", "760": "Pi-2 Pegasi", "761": "5 Lacertae",
+        "762": "Beta Piscis Austrini", "764": "Theta Piscium", "765": "Iota Andromedae",
+        "766": "Alula Australis", "769": "Beta-1 Tucanae", "771": "Delta Piscium",
+        "772": "Eta Andromedae", "778": "HD 23475", "781": "Epsilon Reticuli", "782": "Alpha Caeli",
+        "783": "Pi-2 Orionis", "785": "7 Camelopardalis", "786": "Kappa Leporis",
+        "788": "Chi-1 Orionis", "790": "Nu Orionis", "792": "2 Lyncis", "793": "Epsilon Monocerotis",
+        "797": "Iota Canis Majoris", "798": "15 Lyncis", "799": "Tau Geminorum",
+        "804": "Omicron Puppis", "806": "Epsilon Volantis", "807": "Zeta Monocerotis",
+        "812": "Rho Hydrae", "815": "60 Leonis", "816": "Gamma Comae Berenices",
+        "817": "Theta Virginis", "818": "Chi Centauri", "821": "58 Hydrae", "827": "Maasym",
+        "828": "Yildun", "832": "Xi Pavonis", "833": "Kappa Pavonis", "836": "Anser",
+        "837": "Iota Aquilae", "838": "Sham", "839": "Beta Sagittae", "844": "Delta Delphini",
+        "847": "Theta Indi", "848": "Iota Piscis Austrini", "849": "Delta Indi",
+        "850": "Beta Lacertae", "853": "Gamma Sculptoris", "856": "Beta Sculptoris",
+        "860": "Nu Andromedae", "861": "Tau Piscium", "862": "Nu Piscium", "865": "Tau-1 Eridani",
+        "867": "Beta Fornacis", "872": "Upsilon-1 Eridani", "873": "Pi-6 Orionis",
+        "879": "Gamma Pictoris", "881": "Xi Orionis", "883": "13 Monocerotis",
+        "886": "18 Monocerotis", "891": "Minchir", "896": "Kappa Leonis", "897": "Epsilon Antliae",
+        "899": "10 Leonis Minoris", "903": "21 Leonis Minoris", "904": "Alpha Sextantis",
+        "907": "Delta-2 Chamaeleontis", "908": "Beta Crateris", "915": "Tau Bootis",
+        "916": "Kappa-2 Bootis", "925": "Gamma Circini", "926": "Iota Serpentis",
+        "927": "Psi Ophiuchi", "928": "Epsilon Normae", "932": "Epsilon Telescopii",
+        "945": "Delta Equulei", "950": "Lambda Gruis", "952": "HD 211073", "953": "Delta Tucanae",
+        "954": "6 Lacertae", "955": "11 Lacertae", "956": "Gamma Piscis Austrini",
+        "962": "Lambda Piscium", "965": "Epsilon Tucanae", "976": "HD 22663",
+        "978": "Gamma Camelopardalis", "979": "Tau-8 Eridani", "980": "Delta Reticuli",
+        "981": "Tau-9 Eridani", "982": "HD 26961", "983": "Pi-1 Orionis", "985": "Gamma-1 Caeli",
+        "990": "Chi-2 Orionis", "991": "HD 49878", "992": "21 Lyncis", "999": "HD 77912",
+        "1005": "Upsilon-2 Hydrae", "1007": "HD 93070", "1008": "Iota Antliae", "1010": "HD 96566",
+        "1011": "HD 97534", "1013": "HD 100673", "1014": "HD 110073", "1028": "HD 139664",
+        "1029": "Delta Coronae Borealis", "1031": "Chi Herculis", "1036": "Cujam",
+        "1037": "Rho Ophiuchi", "1038": "Upsilon Ophiuchi", "1048": "Theta Coronae Australis",
+        "1049": "Epsilon-2 Lyrae", "1052": "Alya", "1053": "Delta Coronae Australis",
+        "1057": "13 Vulpeculae", "1063": "2 Lacertae", "1064": "4 Lacertae",
+        "1068": "Delta Sculptoris", "1072": "Phi Piscium", "1073": "Upsilon Piscium",
+        "1078": "Nu Fornacis", "1081": "HD 16754", "1084": "Lambda Ceti", "1094": "11 Orionis",
+        "1095": "Zeta Doradus", "1102": "HD 40409", "1103": "Theta Leporis",
+        "1105": "15 Monocerotis", "1111": "HD 60863", "1113": "HD 63744", "1120": "Asellus Borealis",
+        "1130": "30 Leonis Minoris", "1138": "Theta Crateris", "1140": "Zeta Crateris",
+        "1157": "Eta Normae", "1158": "Delta Normae", "1160": "Delta-1 Apodis",
+        "1168": "Gamma Scuti", "1169": "Delta Scuti", "1174": "Phi Cygni",
+        "1180": "Gamma Microscopii", "1182": "Epsilon Microscopii", "1204": "Mu Piscium",
+        "1234": "HD 42818", "1267": "Epsilon Crateris", "1306": "29 Herculis",
+        "1342": "Theta-1 Microscopii", "1345": "Mu-1 Gruis", "1348": "Pi Aquarii",
+        "1436": "Epsilon Chamaeleontis", "1478": "Nu-2 Draconis", "1511": "Alpha Microscopii",
+        "1514": "Tau Piscis Austrini", "1535": "Beta Horologii", "1597": "Iota Coronae Borealis",
+        "1602": "Eta Ursae Minoris", "1628": "Kappa Piscium", "1637": "Beta Caeli",
+        "1638": "Theta Piscis Austrini", "1639": "Mu Horologii", "1640": "Delta Caeli",
+        "1641": "Alpha Mensae", "1642": "Gamma Sextantis", "1643": "Beta Sextantis",
+        "1644": "Omicron-2 Centauri", "1645": "Revati", "1646": "Zeta Horologii",
+        "1647": "Gamma Mensae", "1648": "Delta Sextantis", "1649": "Eta Crateris",
+        "1650": "Eta Horologii", "1651": "Beta Mensae", "1652": "Iota Horologii",
+        "1653": "HD 145206", "1654": "Eta Delphini", "1655": "Eta Mensae", "1656": "Mira"
+    };
+
+    var EXTRA_IDS = {
+        "344": "", "345": "HD 11937", "346": "HD 20720", "347": "HD 21364", "348": "", "350": "",
+        "351": "HD 30836", "352": "HD 31237", "353": "", "354": "HD 40136", "355": "HD 40035",
+        "357": "HD 74575", "358": "HD 81937", "360": "", "361": "", "362": "HD 130109", "363": "",
+        "364": "HD 139365", "365": "HD 141003", "366": "HD 141795", "367": "HD 147547", "368": "",
+        "369": "HD 163993", "370": "HD 165024", "372": "HD 187076", "373": "", "374": "HD 198700",
+        "377": "", "378": "HD 205478", "379": "HD 213051", "380": "HD 216386", "381": "HD 218594",
+        "382": "HD 219615", "383": "", "384": "", "385": "", "386": "", "387": "HD 23817", "388": "",
+        "390": "", "392": "", "393": "HD 37350", "395": "HD 39364", "396": "HD 45725",
+        "397": "HD 55865", "398": "HD 58207", "399": "", "400": "HD 71878", "404": "HD 80081",
+        "405": "HD 84999", "406": "HD 90432", "410": "", "411": "", "412": "", "413": "HD 109026",
+        "414": "HD 121743", "415": "HD 129246", "416": "HD 129078", "417": "HD 138917",
+        "418": "HD 140436", "419": "", "420": "HD 151249", "421": "HD 160762", "422": "HD 161868",
+        "423": "HD 166014", "424": "", "426": "HD 181276", "427": "HD 184006", "428": "HD 188119",
+        "430": "", "431": "", "432": "HD 204075", "433": "HD 210027", "434": "HD 213558",
+        "435": "HD 222107", "436": "HD 496", "438": "HD 5448", "439": "", "440": "HD 9362",
+        "441": "", "442": "HD 17878", "443": "", "445": "HD 25490", "446": "HD 26967",
+        "447": "HD 29248", "449": "HD 36597", "450": "HD 39060", "451": "HD 44762",
+        "452": "HD 50877", "453": "HD 61935", "455": "HD 62623", "457": "", "459": "HD 79469",
+        "460": "", "461": "", "462": "", "463": "", "465": "", "466": "HD 108483",
+        "467": "HD 109387", "469": "", "470": "HD 121790", "471": "HD 129502", "474": "",
+        "475": "HD 142860", "476": "", "479": "HD 147394", "480": "HD 147675", "481": "HD 153808",
+        "482": "HD 163770", "485": "HD 171443", "487": "HD 187929", "488": "HD 188947",
+        "489": "HD 199629", "490": "", "491": "", "493": "HD 10516", "496": "HD 14055", "497": "",
+        "498": "HD 25940", "499": "", "500": "", "501": "HD 30211", "502": "HD 31910",
+        "504": "HD 40808", "505": "HD 43232", "506": "HD 47205", "507": "", "509": "HD 57623",
+        "510": "HD 74006", "511": "HD 74739", "512": "HD 75691", "513": "", "514": "HD 78045",
+        "517": "HD 99028", "518": "HD 102212", "519": "", "520": "HD 105937", "523": "HD 126660",
+        "525": "HD 141556", "526": "HD 144284", "527": "", "528": "HD 146686", "530": "HD 171759",
+        "531": "HD 176411", "532": "HD 176678", "535": "HD 188228", "536": "HD 192909", "538": "",
+        "540": "HD 213009", "541": "HD 213998", "542": "HD 215665", "543": "HD 219571",
+        "544": "HD 220321", "545": "HD 224617", "547": "HD 4502", "550": "HD 16582",
+        "552": "HD 16815", "553": "HD 16895", "554": "HD 18978", "555": "HD 19373",
+        "558": "HD 26630", "559": "HD 31421", "562": "HD 40932", "563": "HD 45542",
+        "564": "HD 50778", "565": "", "566": "HD 60522", "568": "HD 71243", "570": "HD 73262",
+        "573": "", "574": "HD 92305", "575": "", "576": "HD 98664", "577": "HD 99211",
+        "579": "HD 104979", "581": "HD 106849", "584": "", "585": "HD 125473", "589": "HD 135379",
+        "590": "HD 138749", "591": "HD 138538", "592": "", "594": "HD 143107", "595": "HD 152980",
+        "596": "HD 169767", "598": "", "599": "HD 178345", "601": "HD 197692", "602": "HD 198542",
+        "603": "HD 200761", "605": "HD 206901", "606": "HD 211388", "607": "HD 213306",
+        "609": "HD 214846", "610": "HD 216032", "611": "HD 217364", "612": "HD 222368",
+        "613": "HD 1581", "616": "HD 15371", "617": "HD 17081", "619": "", "620": "HD 23754",
+        "621": "", "624": "HD 41116", "625": "HD 55185", "630": "HD 90537", "631": "HD 106911",
+        "632": "", "633": "HD 114710", "636": "HD 122408", "638": "", "640": "HD 145389",
+        "641": "HD 148184", "643": "HD 149630", "645": "HD 149324", "646": "HD 153751",
+        "647": "HD 157778", "650": "HD 170000", "652": "HD 173764", "653": "HD 173948",
+        "654": "HD 175588", "655": "HD 177474", "656": "HD 195725", "659": "HD 203608",
+        "660": "HD 206936", "662": "HD 211336", "663": "", "664": "HD 214748", "666": "HD 216763",
+        "667": "HD 219215", "668": "HD 219449", "669": "HD 222439", "670": "HD 3369",
+        "671": "HD 3546", "672": "HD 5737", "673": "HD 6186", "674": "HD 6811", "677": "",
+        "678": "HD 15318", "679": "HD 17094", "680": "", "681": "HD 22203", "683": "HD 22484",
+        "686": "HD 25642", "688": "HD 27290", "695": "HD 29763", "696": "HD 30614",
+        "698": "HD 34816", "700": "HD 39014", "706": "", "708": "HD 74280", "710": "", "712": "",
+        "715": "HD 90610", "720": "HD 103192", "726": "", "731": "HD 124882", "737": "HD 142105",
+        "739": "HD 148786", "743": "HD 157919", "746": "HD 165040", "748": "HD 173648",
+        "754": "HD 197964", "759": "HD 209819", "760": "HD 210459", "761": "HD 213310",
+        "762": "HD 213398", "764": "HD 220954", "765": "HD 222173", "766": "", "769": "HD 2884",
+        "771": "HD 4656", "772": "HD 5516", "778": "", "781": "HD 27442", "782": "HD 29875",
+        "783": "HD 30739", "785": "HD 31278", "786": "HD 33949", "788": "HD 39587",
+        "790": "HD 41753", "792": "HD 43378", "793": "HD 44769", "797": "HD 51309",
+        "798": "HD 50522", "799": "HD 54719", "804": "HD 63462", "806": "HD 68520",
+        "807": "HD 67594", "812": "HD 75137", "815": "HD 95608", "816": "HD 108381",
+        "817": "HD 114330", "818": "HD 122980", "821": "HD 130694", "827": "", "828": "",
+        "832": "HD 168339", "833": "HD 174694", "836": "", "837": "HD 184930", "838": "",
+        "839": "HD 185958", "844": "HD 197461", "847": "HD 202730", "848": "HD 206742",
+        "849": "HD 208450", "850": "HD 212496", "853": "HD 219784", "856": "HD 221507",
+        "860": "HD 4727", "861": "HD 7106", "862": "HD 10380", "865": "HD 17206", "867": "HD 17652",
+        "872": "HD 29085", "873": "HD 31767", "879": "HD 39523", "881": "HD 42560",
+        "883": "HD 46300", "886": "HD 49293", "891": "", "896": "HD 81146", "897": "HD 82150",
+        "899": "HD 82635", "903": "HD 87696", "904": "HD 87887", "907": "HD 93845",
+        "908": "HD 97277", "915": "HD 120136", "916": "HD 124675", "925": "HD 136415",
+        "926": "HD 140159", "927": "HD 147700", "928": "HD 147971", "932": "HD 166063",
+        "945": "HD 202275", "950": "HD 209688", "952": "", "953": "HD 212581", "954": "HD 213420",
+        "955": "HD 214868", "956": "HD 216336", "962": "HD 222603", "965": "HD 224686", "976": "",
+        "978": "HD 23401", "979": "HD 24587", "980": "HD 25422", "981": "HD 25267", "982": "",
+        "983": "HD 31295", "985": "HD 32831", "990": "HD 41117", "991": "", "992": "HD 58142",
+        "999": "", "1005": "HD 87504", "1007": "", "1008": "HD 94890", "1010": "", "1011": "",
+        "1013": "", "1014": "", "1028": "", "1029": "HD 141714", "1031": "HD 142373", "1036": "",
+        "1037": "HD 147933", "1038": "HD 148367", "1048": "HD 170845", "1049": "HD 173607",
+        "1052": "", "1053": "HD 177873", "1057": "HD 188260", "1063": "HD 212120",
+        "1064": "HD 212593", "1068": "HD 223352", "1072": "HD 7318", "1073": "HD 7964",
+        "1078": "HD 12767", "1081": "", "1084": "HD 18604", "1094": "HD 32549", "1095": "HD 33262",
+        "1102": "", "1103": "HD 41695", "1105": "HD 47839", "1111": "", "1113": "", "1120": "",
+        "1130": "HD 90277", "1138": "HD 100889", "1140": "HD 102070", "1157": "HD 143546",
+        "1158": "HD 144197", "1160": "HD 145366", "1168": "HD 170296", "1169": "HD 172748",
+        "1174": "HD 185734", "1180": "HD 199951", "1182": "HD 202627", "1204": "HD 9138", "1234": "",
+        "1267": "HD 99167", "1306": "HD 149161", "1342": "HD 203006", "1345": "HD 211088",
+        "1348": "HD 212571", "1436": "HD 104174", "1478": "HD 159560", "1511": "HD 198232",
+        "1514": "HD 210302", "1535": "HD 18866", "1597": "HD 143807", "1602": "HD 148048",
+        "1628": "HD 220825", "1637": "HD 29992", "1638": "HD 207155", "1639": "HD 19319",
+        "1640": "HD 28873", "1641": "HD 43834", "1642": "HD 85558", "1643": "HD 90994",
+        "1644": "HD 100262", "1645": "", "1646": "HD 16920", "1647": "HD 37763", "1648": "HD 90882",
+        "1649": "HD 103632", "1650": "HD 16555", "1651": "HD 33285", "1652": "HD 17051", "1653": "",
+        "1654": "HD 195943", "1655": "HD 32440", "1656": ""
+    };
 
     // One column is a degree of azimuth, one row two degrees of altitude —
     // matching the ~2:1 character cell, so constellation shapes stay locally
@@ -560,14 +801,21 @@
     }
 
     /*
-     * How a star is written down: { name, id }, or undefined for one this
-     * table does not reach. `id` is an empty string when the catalogue number
-     * is already serving as the name. Never throws, whatever it is handed.
+     * How a star is written down: { name, id }, or undefined for one neither
+     * table reaches. `id` is an empty string when the catalogue number is
+     * already serving as the name. Never throws, whatever it is handed.
+     *
+     * Both lookups go through hasOwnProperty, and not only because the faint
+     * table is keyed by index: a plain `NAMES[index]` answers 'constructor'
+     * with a Function and calls it a star. The index arrives from a hovered
+     * cell, so a string is not hypothetical.
      */
+    var owns = Object.prototype.hasOwnProperty;
+
     function starLabel(index) {
-        var name = NAMES[index];
-        if (!name) return undefined;
-        return { name: name, id: IDS[index] || '' };
+        if (owns.call(NAMES, index)) return { name: NAMES[index], id: IDS[index] || '' };
+        if (owns.call(EXTRA_NAMES, index)) return { name: EXTRA_NAMES[index], id: EXTRA_IDS[index] || '' };
+        return undefined;
     }
 
     var SkyMap = {

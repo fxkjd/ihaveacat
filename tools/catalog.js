@@ -7,6 +7,7 @@ const ROOT = path.join(__dirname, '..');
 const DATA = path.join(__dirname, 'data');
 const LIMIT = 5;
 const ALIASES = require('./data/hip-aliases.json');
+const DESIGNATIONS = require('./data/designations.json');
 
 function parseCSV(text) {
     const rows = []; let row = [], field = '', quoted = false;
@@ -76,6 +77,46 @@ function hipMap(stars) {
     });
     return map;
 }
+// Whichever catalogue number the record actually carries. `gl` already
+// spells its own prefix; the others are bare numbers.
+function catalogNumber(s) {
+    if (s.hd) return 'HD ' + s.hd;
+    if (s.hr) return 'HR ' + s.hr;
+    if (s.gl) return s.gl;
+    if (s.hip) return 'HIP ' + s.hip;
+    throw new Error('Star ' + s.id + ' carries no catalogue number');
+}
+
+/*
+ * How a star is written down, in the order a star atlas uses: the traditional
+ * name where it has one, else the Bayer designation spelled out, else
+ * Flamsteed, else the catalogue number standing in as the name.
+ *
+ * `id` is the catalogue number, and is present exactly for the designation
+ * forms — Vega needs no number beside it, Alpha Lupi does because a
+ * designation is something you look up, and a star whose only name IS
+ * HD 82668 must not say it twice.
+ *
+ * This reproduces all 343 names already in js/sky.js, which generate() checks
+ * before it writes a single new one.
+ */
+function starLabel(s) {
+    if (s.proper) return { name: s.proper, id: '' };
+    const genitive = DESIGNATIONS.genitive[s.con];
+    if (s.bayer) {
+        const m = /^([A-Za-z]+)(?:-(\d))?$/.exec(s.bayer);
+        const greek = m && DESIGNATIONS.greek[m[1]];
+        if (!greek) throw new Error('Unknown Bayer letter ' + s.bayer);
+        if (!genitive) throw new Error('Unknown constellation ' + s.con);
+        return { name: greek + (m[2] ? '-' + m[2] : '') + ' ' + genitive, id: catalogNumber(s) };
+    }
+    if (s.flam) {
+        if (!genitive) throw new Error('Unknown constellation ' + s.con);
+        return { name: s.flam + ' ' + genitive, id: catalogNumber(s) };
+    }
+    return { name: catalogNumber(s), id: '' };
+}
+
 const round = n => Math.round(n * 10) / 10 || 0;
 const triplet = s => [round(s.ra * 15) % 360, round(s.dec), round(s.mag)];
 
@@ -128,6 +169,61 @@ function generate(figures, source) {
     return { catalog: stars.flatMap(triplet), constellations, stars };
 }
 
+/*
+ * The label tables js/sky.js carries. The dense NAMES/IDS it already ships are
+ * re-derived and checked rather than rewritten — 343 names that are on the
+ * page and correct are not worth regenerating — and the constellation
+ * endpoints the magnitude limit does not reach get a table of their own,
+ * keyed by catalogue index.
+ *
+ * Only endpoints: a star the figures never touch is never drawn either, and
+ * naming the whole catalogue would triple the file for stars nobody can point
+ * at. An endpoint with no label stops generation.
+ */
+function labelTables(result, sky) {
+    const limit = Number(/var SKY_MAG_LIMIT = ([\d.]+);/.exec(sky)[1]);
+    const names = JSON.parse('[' + /var NAMES = \[([\s\S]*?)\];/.exec(sky)[1] + ']');
+    const ids = JSON.parse('[' + /var IDS = \[([\s\S]*?)\];/.exec(sky)[1] + ']');
+    const endpoints = new Set(result.constellations.flatMap(c => c.segments.flat()));
+    const dense = result.stars.filter(s => round(s.mag) <= limit).length;
+    if (dense !== names.length || dense !== ids.length) {
+        throw new Error(`The dense tables cover ${names.length}/${ids.length} stars, not the ${dense} below magnitude ${limit}`);
+    }
+    const extraNames = {}, extraIds = {};
+    result.stars.forEach((s, i) => {
+        const label = starLabel(s);
+        if (i < dense) {
+            // Every name already on the page has to come out of the same rule
+            // as the new ones, or the two halves of the table drift apart and
+            // the sky ends up named by two different authorities.
+            if (names[i] !== label.name || ids[i] !== label.id) {
+                throw new Error(`Label drift at index ${i}: shipped ${JSON.stringify([names[i], ids[i]])}, ` +
+                    `derived ${JSON.stringify([label.name, label.id])}`);
+            }
+            return;
+        }
+        if (!endpoints.has(i)) return;
+        extraNames[i] = label.name;
+        extraIds[i] = label.id;
+    });
+    const missing = [...endpoints].filter(i => i >= dense && extraNames[i] === undefined);
+    if (missing.length) throw new Error('Unlabelled constellation endpoints: ' + missing.join(', '));
+    return { extraNames, extraIds, dense };
+}
+
+// A JS object literal, wrapped to roughly the width of the tables above it.
+function objectLiteral(map) {
+    const lines = [];
+    let line = '';
+    Object.keys(map).forEach(key => {
+        const entry = JSON.stringify(key) + ': ' + JSON.stringify(map[key]);
+        const joined = line ? line + ', ' + entry : entry;
+        if (joined.length > 92) { lines.push(line + ','); line = entry; } else line = joined;
+    });
+    if (line) lines.push(line);
+    return '{\n' + lines.map(l => '        ' + l).join('\n') + '\n    }';
+}
+
 function readFigures() {
     const iau = parseFigures(fs.readFileSync(path.join(DATA, 'constellation_lines_iau.dat'), 'utf8'));
     const simplified = parseFigures(fs.readFileSync(path.join(DATA, 'constellation_lines_simplified.dat'), 'utf8'));
@@ -138,9 +234,21 @@ function readFigures() {
 // rounded triplets reconstruct the legacy catalogue, NEVER nearest neighbours.
 // Equal triplets use HYG source order; both entries must exist in the baseline.
 function importHYG(csv, catalog, figures) {
+    // The name columns travel with the coordinates so that regeneration stays
+    // offline afterwards: a star's designation is as much part of the record
+    // as its position, and re-deriving it would mean re-downloading 34 MB.
+    const named = s => {
+        const out = {};
+        ['proper', 'bayer', 'flam', 'con', 'hd', 'hr', 'gl'].forEach(k => {
+            const v = String(s[k] || '').trim();
+            if (v) out[k] = v;
+        });
+        return out;
+    };
     const source = parseCSV(csv).filter(s => Number(s.id) !== 0).map(s => ({
         id: Number(s.id), hip: Number(s.hip) || null,
-        ra: Number(s.ra), dec: Number(s.dec), mag: Number(s.mag), originalIndex: null
+        ra: Number(s.ra), dec: Number(s.dec), mag: Number(s.mag), originalIndex: null,
+        ...named(s)
     }));
     const normal = source.filter(s => s.mag <= LIMIT);
     const buckets = new Map();
@@ -187,9 +295,13 @@ function main() {
         }
         const skyPath = path.join(ROOT, 'js/sky.js');
         const sky = fs.readFileSync(skyPath, 'utf8');
+        const tables = labelTables(result, sky);
         const lines = [];
         for (let i = 0; i < result.catalog.length; i += 24) lines.push('        ' + result.catalog.slice(i, i + 24).join(','));
-        fs.writeFileSync(skyPath, sky.replace(/var CATALOG = \[[\s\S]*?\];/, 'var CATALOG = [\n' + lines.join(',\n') + '\n    ];'));
+        fs.writeFileSync(skyPath, sky
+            .replace(/var CATALOG = \[[\s\S]*?\];/, 'var CATALOG = [\n' + lines.join(',\n') + '\n    ];')
+            .replace(/var EXTRA_NAMES = \{[\s\S]*?\};/, 'var EXTRA_NAMES = ' + objectLiteral(tables.extraNames) + ';')
+            .replace(/var EXTRA_IDS = \{[\s\S]*?\};/, 'var EXTRA_IDS = ' + objectLiteral(tables.extraIds) + ';'));
         const data = '/* Generated by tools/catalog.js; constellation data © Dominic Ford, GPL-3.0-or-later. See CLAUDE.md. */\n' +
             '(function (global) {\n    var data = [\n' + result.constellations.map(c => '        ' + JSON.stringify(c)).join(',\n') +
             '\n    ];\n    if (typeof module !== "undefined" && module.exports) module.exports = data;\n    else global.ConstellationData = data;\n})(this);\n';
@@ -198,8 +310,10 @@ function main() {
         fs.writeFileSync(path.join(DATA, 'coverage-iau-before.txt'), summary(audit(iau, source, original)));
         const after = audit(figures, source, new Set(result.stars.map(s => s.id)));
         if (after.missing.length) throw new Error('Incomplete generated catalogue');
-        console.log(`${result.stars.length - original.size} added; ${result.stars.length} total; ${after.complete}/88 complete`);
+        console.log(`${result.stars.length - original.size} added; ${result.stars.length} total; ${after.complete}/88 complete; ` +
+            `${tables.dense} named below the limit + ${Object.keys(tables.extraNames).length} constellation endpoints`);
     } else throw new Error('Usage: node tools/catalog.js [audit [--iau-only]|import HYG.csv|generate]');
 }
-module.exports = { parseCSV, parseFigures, figuresWithFallback, requiredHIP, hipMap, audit, summary, generate, importHYG };
+module.exports = { parseCSV, parseFigures, figuresWithFallback, requiredHIP, hipMap, audit, summary,
+    generate, importHYG, starLabel, catalogNumber, labelTables };
 if (require.main === module) main();

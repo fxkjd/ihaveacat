@@ -5,11 +5,11 @@ Source code for https://ihavea.cat/.
 ## Constellations
 
 Enable **Constellations** in the settings menu. Stars remain ASCII; faint SVG
-independent lines stop at each star glyph's measured ink bounds. The preference survives reloads using
-`localStorage` (`ihaveacat.constellations`); it defaults off and still works
-when storage is unavailable. The existing star-name preference remains
-page-local. No network data fetch or build step is needed to open the page,
-including over `file://`.
+independent lines stop at each star glyph's measured ink bounds. The preference
+survives reloads using `localStorage` (`ihaveacat.constellations`); it defaults
+off and still works when storage is unavailable. The existing star-name
+preference remains page-local. No network data fetch or build step is needed
+to open the page, including over `file://`.
 
 ## Coverage and data regeneration
 
@@ -40,10 +40,11 @@ Serpens A/B are merged into one constellation without connecting their paths.
 The resulting 88 figures contain 756 segments; originally 731 were renderable.
 Only 20 stars were added, giving **1,657 catalogue entries**.
 
-`tools/catalog.js` owns parsing, auditing, HIP mapping and generation.
+`tools/catalog.js` owns parsing, auditing, HIP mapping, naming and generation.
 `tools/data/hyg-v41-subset.json` is a development-only extract of the pinned HYG
 v4.1 CSV, containing the normal stars plus required endpoints, their HYG/HIP
-IDs, original precision, and original catalogue indexes. It is not loaded by
+IDs, original precision, original catalogue indexes, and the name columns
+(`proper`, `bayer`, `flam`, `con`, `hd`, `hr`, `gl`). It is not loaded by
 the browser. `originalIndex` preserves existing star names and twinkle phases.
 The original catalogue had no identity table; import reconstructs it using
 exact rounded `(RA, Dec, magnitude)` triplets and checks all 1,637 entries
@@ -77,6 +78,18 @@ The existing RA/Dec → altitude/azimuth → grid projection is unchanged.
 so stars sharing an ASCII cell retain their endpoint identities. Normal stars
 still use magnitude 3.6; only required constellation stars bypass that limit,
 and only while enabled. Additional faint stars use the existing `.` glyph.
+
+## Star names
+
+Every star a figure draws is named, not only the 343 down to the display
+magnitude limit: `js/sky.js` carries the dense `NAMES`/`IDS` arrays plus an
+index-keyed table for the 438 constellation endpoints below that limit. Both
+are written by `npm run generate:catalog` from one rule — proper name, else the
+Bayer designation spelled out, else Flamsteed, else the catalogue number — and
+generation re-derives all 343 shipped names first and stops if any has drifted,
+so the two tables cannot disagree about how a star is written down. A star no
+figure touches stays unnamed: naming the other ~900 catalogue entries would
+cost file size for stars nobody can point at.
 
 `main.js` positions a pointer-transparent SVG at the measured `<pre>` origin,
 using the same character width and line height as the ASCII grid. A DOM Range

@@ -291,6 +291,46 @@ test('every star bright enough to be drawn has a name', () => {
     assert.equal(checked, 343);
 });
 
+test('every star a constellation draws has a name, however faint', () => {
+    /*
+     * The figures reach to magnitude 6.5, well past the density knob, so
+     * turning constellations on adds hundreds of stars the dense table cannot
+     * reach. Every one of them is on the page and hoverable, so every one of
+     * them is named — that is what the second table is for.
+     */
+    const endpoints = new Set();
+    SkyMap.CONSTELLATIONS.forEach((c) => c.segments.forEach((seg) => seg.forEach((i) => endpoints.add(i))));
+    assert.ok(endpoints.size > 700, `only ${endpoints.size} endpoints`);
+    let faint = 0;
+    endpoints.forEach((i) => {
+        const label = SkyMap.starLabel(i);
+        assert.ok(label, `constellation star ${i} has no label`);
+        assert.ok(label.name.length > 0, `constellation star ${i} has an empty name`);
+        if (SkyMap.CATALOG[i * 3 + 2] > SkyMap.SKY_MAG_LIMIT) faint++;
+        if (label.id) {
+            assert.match(label.id, /^(HD|HIP|HR|Gl) \S+$/, `star ${i}: ${label.id}`);
+            assert.notEqual(label.id, label.name, `star ${i} repeats its name`);
+            assert.match(label.name, /^[A-Z][a-z]+(-\d)? [A-Z]|^\d+ [A-Z]/,
+                `star ${i} has a real name but still carries ${label.id}`);
+        }
+    });
+    assert.ok(faint > 400, `only ${faint} endpoints are past the density knob`);
+});
+
+test('the faint table is the constellation endpoints and nothing else', () => {
+    // Naming the whole catalogue would triple the file for stars nobody can
+    // point at, so a star past the limit that no figure touches stays unnamed.
+    const endpoints = new Set();
+    SkyMap.CONSTELLATIONS.forEach((c) => c.segments.forEach((seg) => seg.forEach((i) => endpoints.add(i))));
+    let anonymous = 0;
+    for (let i = 0; i * 3 < SkyMap.CATALOG.length; i++) {
+        if (SkyMap.CATALOG[i * 3 + 2] <= SkyMap.SKY_MAG_LIMIT || endpoints.has(i)) continue;
+        assert.equal(SkyMap.starLabel(i), undefined, `star ${i} is named but never drawn`);
+        anonymous++;
+    }
+    assert.ok(anonymous > 800, `only ${anonymous} stars went unnamed`);
+});
+
 test('the names line up with the catalogue', () => {
     // Pinned to published values, not to our own output: the catalogue is
     // sorted brightest-first, so these are the five brightest stars in the
@@ -312,7 +352,11 @@ test('the names line up with the catalogue', () => {
 });
 
 test('starLabel never throws, whatever it is handed', () => {
-    [-1, 1e6, NaN, undefined, null, 'x', 1.5].forEach((i) => {
+    // 'constructor' and friends are the reason the faint table is read through
+    // hasOwnProperty: a plain lookup would hand back a Function and call it a
+    // star. 'x' is not hypothetical either — a cell key is a string.
+    [-1, 1e6, NaN, undefined, null, 'x', 1.5,
+        'constructor', 'toString', '__proto__', 'hasOwnProperty'].forEach((i) => {
         assert.doesNotThrow(() => SkyMap.starLabel(i), String(i));
         assert.equal(SkyMap.starLabel(i), undefined, String(i));
     });
