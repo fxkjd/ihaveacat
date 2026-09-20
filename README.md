@@ -6,7 +6,10 @@ Source code for https://ihavea.cat/.
 
 Enable **Constellations** in the settings menu. Stars remain ASCII; faint SVG
 independent lines stop a visible gap short of each star glyph's measured ink
-bounds, at both their own ends and at any star they cross. The preference
+bounds, at both their own ends and at any star they cross. Hovering a line
+brightens the whole figure to the star colour at full opacity; with the
+**name** setting on it also names it, in the same label the stars use, and a
+star under the pointer wins that label from its own figure. The preference
 survives reloads using `localStorage` (`ihaveacat.constellations`); it defaults
 off and still works when storage is unavailable. The existing star-name
 preference remains page-local. No network data fetch or build step is needed
@@ -109,10 +112,19 @@ wrap-crossing lines are omitted. The SVG mask is built from that same scene
 predicate, including moon/cat/fence halos. Lines crossing foreground objects
 are clipped even when both endpoints are clear.
 
+Each figure gets its own `<g class="constellation">`, so a hover lights all of
+its lines with one class write. The hit test is geometric, in `main.js`,
+against the drawn edges: the overlay is `pointer-events: none` behind the
+scene, so its lines never receive a pointer, and nearest-within-reach avoids
+two crossing figures trading the highlight. A repaint discards those groups, so
+the highlight is restored and re-applied rather than kept as a node reference.
+
 SVG work occurs on settings, view/hash, grid, font, resize and orientation
 changes, including resizes with unchanged grid counts. Tail, meteor and firefly
 frames never touch it. Lines have no animation or transition and use the same
-white and 25% opacity as the dimmest star twinkle state. The glyph masks never
+white and 25% opacity as the dimmest star twinkle state; a hovered figure uses
+that same white at the twinkle's bright end, full opacity, and still does not
+transition. The glyph masks never
 inherit star opacity, so twinkling cannot expose a line through a star.
 Constellations retain the existing projection's zenith
 distortion; this feature does not introduce a new celestial projection.

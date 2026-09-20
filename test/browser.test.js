@@ -70,7 +70,7 @@ test('constellations align on resize and orientation, mask foreground, and resto
         const boxes = new Map(stars.map(s => [s.x + ':' + s.y,
             Scene.starInkBox(s, glyphMetrics(s.char, fontSize), charW, lineH, fontSize * 0.8, gap)]));
         const expected = SkyMap.visibleSegments(positions, p => Scene.starVisible(p, L))
-            .map(s => Scene.starEdge(boxes.get(s[0].x + ':' + s[0].y), boxes.get(s[1].x + ':' + s[1].y))).filter(Boolean);
+            .map(s => Scene.starEdge(boxes.get(s.a.x + ':' + s.a.y), boxes.get(s.b.x + ':' + s.b.y))).filter(Boolean);
         const lines = svgDescendants(svg, 'line');
         assert.equal(lines.length, expected.length);
         lines.forEach((line, i) => {
@@ -428,6 +428,12 @@ function loadPage(options) {
         // can drive the feature with no panel open.
         setNames(on) {
             win.dispatchEvent(new win.CustomEvent('settingschange', { detail: { names: on } }));
+        },
+        // Both settings travel in one event and an absent key reads as off, so
+        // a test that wants them together has to say both: setNames alone
+        // would quietly switch the constellations back off.
+        setSettings(detail) {
+            win.dispatchEvent(new win.CustomEvent('settingschange', { detail }));
         },
         field(name) {
             // lat then lon, in the order rows() lays them out.
@@ -1303,5 +1309,250 @@ test('the name is never written across the moon or the cat', () => {
             `the label for the star at ${s.x},${s.y} lies across the moon or the cat`);
         assert.ok(x >= 0 && x + W <= HOVER_W, `label off the side at ${x}`);
     });
+    assert.deepEqual(page.errors, []);
+});
+
+/* ---- constellation hover ------------------------------------------------ */
+
+// The figures main.js should have drawn, in its order, with their geometry —
+// recomputed from the pure modules rather than read back off the DOM.
+function figuresFor(page) {
+    const grid = gridFor(HOVER_W, HOVER_H);
+    const L = Scene.layout(grid.cols, grid.rows);
+    const fontSize = parseFloat(page.pre.style.fontSize);
+    const charW = fontSize * 0.6, lineH = parseFloat(page.pre.style.lineHeight);
+    const positions = [];
+    const stars = SkyMap.starCells({ date: new Date(HOVER_NOW), ...SkyMap.DEFAULT_VIEW,
+        cols: L.cols, skyRows: L.fenceTop, constellations: true, positions });
+    const boxes = new Map(stars.map((s) => [s.x + ':' + s.y, Scene.starInkBox(
+        s, glyphMetrics(s.char, fontSize), charW, lineH, fontSize * 0.8,
+        Scene.starGap(charW, lineH))]));
+    const byFigure = new Map(), out = [];
+    SkyMap.visibleSegments(positions, (p) => Scene.starVisible(p, L)).forEach((seg) => {
+        const edge = Scene.starEdge(boxes.get(seg.a.x + ':' + seg.a.y), boxes.get(seg.b.x + ':' + seg.b.y));
+        if (!edge) return;
+        let f = byFigure.get(seg.figure);
+        if (!f) {
+            f = { figure: seg.figure, name: SkyMap.figureName(seg.figure), edges: [] };
+            byFigure.set(seg.figure, f);
+            out.push(f);
+        }
+        f.edges.push(edge);
+    });
+    return { figures: out, stars, layout: L, charW, lineH };
+}
+
+function edgeDistance(e, x, y) {
+    const dx = e.x2 - e.x1, dy = e.y2 - e.y1;
+    const len2 = dx * dx + dy * dy;
+    const t = Math.max(0, Math.min(1, len2 ? ((x - e.x1) * dx + (y - e.y1) * dy) / len2 : 0));
+    return Math.hypot(e.x1 + t * dx - x, e.y1 + t * dy - y);
+}
+
+// A point squarely on one figure, comfortably clear of every other and not in
+// a cell that holds a named star — so the assertion is about the highlight and
+// not about which of two crossing lines the pointer was nearer, nor about the
+// star that would rightly win the label from under it.
+function aimAtFigure(info) {
+    const reach = Math.max(3, info.charW * 0.4);
+    const named = new Set(info.stars
+        .filter((s) => Scene.starVisible(s, info.layout) && SkyMap.starLabel(s.index))
+        .map((s) => s.x + ':' + s.y));
+    // Biggest figure first: "the whole figure lights" is only worth asserting
+    // where the figure has more than the one segment under the cursor.
+    for (const f of [...info.figures].sort((a, b) => b.edges.length - a.edges.length)) {
+        for (const e of f.edges) {
+            const x = (e.x1 + e.x2) / 2, y = (e.y1 + e.y2) / 2;
+            if (named.has(Math.floor(x / info.charW) + ':' + Math.floor(y / info.lineH))) continue;
+            const clear = info.figures.every((o) =>
+                o === f || o.edges.every((oe) => edgeDistance(oe, x, y) > reach * 3));
+            if (clear) return { figure: f, x, y };
+        }
+    }
+    return null;
+}
+
+function constellationPage() {
+    const page = hoverPage();
+    page.setSettings({ names: true, constellations: true });
+    return page;
+}
+
+function pointAtPixel(page, x, y) {
+    const r = page.rect();
+    page.pre.dispatch('mousemove', { clientX: r.left + x, clientY: r.top + y });
+    page.tick();
+}
+
+test('every figure is its own group, and the lines still match the geometry', () => {
+    const page = constellationPage();
+    const info = figuresFor(page);
+    const groups = page.byClass('constellation');
+    assert.ok(info.figures.length > 1, 'the fixture sky should show more than one figure');
+    assert.equal(groups.length, info.figures.length);
+    groups.forEach((g, i) => {
+        assert.equal(g.children.length, info.figures[i].edges.length,
+            `figure ${info.figures[i].name} drew the wrong number of lines`);
+        g.children.forEach((line, j) => {
+            assert.equal(line.tagName, 'line');
+            ['x1', 'y1', 'x2', 'y2'].forEach((k) => near(+line.attributes[k], info.figures[i].edges[j][k]));
+        });
+    });
+    // Nothing is lit until something is pointed at.
+    assert.equal(page.byClass('constellation-on').length, 0);
+    assert.deepEqual(page.errors, []);
+});
+
+test('hovering one segment lights the whole figure, and only that figure', () => {
+    const page = constellationPage();
+    const info = figuresFor(page);
+    const aim = aimAtFigure(info);
+    assert.ok(aim, 'no segment in this sky is clear enough of the others to aim at');
+    assert.ok(aim.figure.edges.length > 1, 'aim at a figure with more than one segment');
+
+    pointAtPixel(page, aim.x, aim.y);
+    const lit = page.byClass('constellation-on');
+    assert.equal(lit.length, 1, 'exactly one figure should be lit');
+    assert.equal(lit[0].children.length, aim.figure.edges.length,
+        'the whole figure lights, not just the segment under the cursor');
+    assert.equal(page.label().hidden, false);
+    assert.equal(page.label().textContent, aim.figure.name);
+
+    // Off the line: dim again, and nothing named.
+    pointAtPixel(page, aim.x, aim.y + info.lineH * 3);
+    assert.equal(page.byClass('constellation-on').length, 0);
+    assert.equal(page.label().hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('the highlight is the constellation setting; the name is the name setting', () => {
+    const page = hoverPage();
+    page.setSettings({ names: false, constellations: true });
+    const aim = aimAtFigure(figuresFor(page));
+    assert.ok(aim);
+
+    pointAtPixel(page, aim.x, aim.y);
+    assert.equal(page.byClass('constellation-on').length, 1, 'the highlight needs no name toggle');
+    assert.equal(page.label().hidden, true, 'the name does');
+
+    // And the name appears on the setting alone, with no second mousemove.
+    page.setSettings({ names: true, constellations: true });
+    page.tick();
+    assert.equal(page.label().hidden, false);
+    assert.equal(page.label().textContent, aim.figure.name);
+
+    // Turning the lines off takes the highlight with them.
+    page.setSettings({ names: true, constellations: false });
+    page.tick();
+    assert.equal(page.byClass('constellation-on').length, 0);
+    assert.equal(page.label().hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('leaving the scene puts every figure back', () => {
+    const page = constellationPage();
+    const aim = aimAtFigure(figuresFor(page));
+    pointAtPixel(page, aim.x, aim.y);
+    assert.equal(page.byClass('constellation-on').length, 1);
+    page.leave();
+    assert.equal(page.byClass('constellation-on').length, 0);
+    assert.equal(page.label().hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a repaint re-lights the figure the pointer is still on', () => {
+    const page = constellationPage();
+    const aim = aimAtFigure(figuresFor(page));
+    pointAtPixel(page, aim.x, aim.y);
+    assert.equal(page.byClass('constellation-on').length, 1);
+
+    // Same grid, new nodes: the overlay is rebuilt on every resize, so a
+    // highlight kept as a reference to the old <g> would simply vanish.
+    page.resize(HOVER_W, HOVER_H);
+    page.tick();
+    const lit = page.byClass('constellation-on');
+    assert.equal(lit.length, 1, 'the highlight did not survive the rebuild');
+    assert.equal(lit[0].children.length, aim.figure.edges.length);
+    assert.equal(page.label().textContent, aim.figure.name);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a star at the end of a figure is named, and its figure still lights', () => {
+    const page = constellationPage();
+    const info = figuresFor(page);
+    const reach = Math.max(3, info.charW * 0.4);
+    let found = null;
+    for (const s of info.stars) {
+        if (!Scene.starVisible(s, info.layout) || !SkyMap.starLabel(s.index)) continue;
+        const x = (s.x + 0.5) * info.charW, y = (s.y + 0.5) * info.lineH;
+        const f = info.figures.find((o) => o.edges.some((e) => edgeDistance(e, x, y) < reach));
+        if (f) { found = { star: s, figure: f, x, y }; break; }
+    }
+    assert.ok(found, 'no named star in this sky sits on one of its own figure lines');
+    pointAtPixel(page, found.x, found.y);
+    assert.equal(page.label().textContent, labelFor(found.star),
+        'the star should win the label over its figure');
+    assert.equal(page.byClass('constellation-on').length, 1, 'and the figure should still light');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a constellation hover never touches the scene', () => {
+    const page = constellationPage();
+    const snap = () => page.pre.children.map((r) =>
+        JSON.stringify(r.children?.map((c) => [c.textContent, c.className, c.nodeValue])));
+    const before = snap();
+    const aim = aimAtFigure(figuresFor(page));
+    pointAtPixel(page, aim.x, aim.y);
+    assert.deepEqual(snap(), before);
+    page.leave();
+    assert.deepEqual(snap(), before);
+    assert.deepEqual(page.errors, []);
+});
+
+test('the figure highlight survives the reduced-motion flip', () => {
+    const page = constellationPage();
+    const aim = aimAtFigure(figuresFor(page));
+    pointAtPixel(page, aim.x, aim.y);
+    page.setReducedMotion(true);
+    page.tick();
+    // Less movement, not less information — the same rule the label follows.
+    assert.equal(page.byClass('constellation-on').length, 1);
+    assert.equal(page.label().hidden, false);
+    assert.deepEqual(page.errors, []);
+});
+
+test('the stars the setting adds are named like any other', () => {
+    const page = constellationPage();
+    const info = figuresFor(page);
+    // The figures reach to magnitude 6.5, so most of what the setting adds is
+    // far below the density knob. Those stars used to hover as nothing at all.
+    const faint = info.stars.filter((s) =>
+        SkyMap.CATALOG[s.index * 3 + 2] > SkyMap.SKY_MAG_LIMIT && Scene.starVisible(s, info.layout));
+    assert.ok(faint.length > 20, `only ${faint.length} faint stars on screen`);
+    faint.forEach((s) => {
+        page.hover(s.x, s.y);
+        page.tick();
+        assert.equal(page.label().hidden, false,
+            `the star the constellations added at ${s.x},${s.y} was not named`);
+        assert.equal(page.label().textContent, labelFor(s));
+    });
+
+    // And they go back to not being there at all when the setting is off.
+    page.setSettings({ names: true, constellations: false });
+    page.tick();
+    page.hover(faint[0].x, faint[0].y);
+    page.tick();
+    assert.equal(page.label().textContent === labelFor(faint[0]) && !page.label().hidden, false,
+        'a star only the constellations draw is still named with them off');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a pointer that cannot hover lights nothing', () => {
+    const page = hoverPage({ hover: false });
+    page.setSettings({ names: true, constellations: true });
+    const aim = aimAtFigure(figuresFor(page));
+    pointAtPixel(page, aim.x, aim.y);
+    assert.equal(page.byClass('constellation-on').length, 0);
+    assert.equal(page.label().hidden, true);
     assert.deepEqual(page.errors, []);
 });

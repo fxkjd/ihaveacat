@@ -72,6 +72,13 @@
     var constellationsOn = false;
     var starPositions = [];
     var constellationSVG = null;
+    // One entry per figure with at least one drawn edge:
+    // { figure, name, group, edges }. The edges are the same pixel geometry
+    // handed to the <line> nodes, kept so the pointer can be tested against
+    // them — see the hover section for why the hit test cannot be the SVG's.
+    var constellationHits = [];
+    var FIGURE_CLASS = 'constellation';
+    var FIGURE_ON_CLASS = 'constellation constellation-on';
     var baselineProbe = null, inkContext = null;
 
     function measureStarInk() {
@@ -151,6 +158,8 @@
     // animation frame. Pixel metrics and the pre origin also update on a
     // resize which leaves the grid dimensions unchanged.
     function paintConstellations() {
+        constellationHits = [];
+        resetHighlight();
         if (!constellationsOn || !hasSky || !(last.cols > 0)) {
             if (constellationSVG) constellationSVG.style.display = 'none';
             return;
@@ -202,10 +211,27 @@
         defs.appendChild(mask);
         frag.appendChild(defs);
         var lines = svgNode('g', { mask: 'url(#constellation-sky-mask)' });
+        // A <g> per figure, so lighting one up is a single class write rather
+        // than a walk over its lines — and so the DOM says which figure is
+        // which, which the flat list it replaces could not.
+        var groups = {};
         SkyMap.visibleSegments(starPositions, function (s) { return Scene.starVisible(s, L); })
             .forEach(function (s) {
-                var edge = Scene.starEdge(boxes[s[0].x + ':' + s[0].y], boxes[s[1].x + ':' + s[1].y]);
-                if (edge) lines.appendChild(svgNode('line', edge));
+                var edge = Scene.starEdge(boxes[s.a.x + ':' + s.a.y], boxes[s.b.x + ':' + s.b.y]);
+                if (!edge) return;
+                var hit = groups[s.figure];
+                if (!hit) {
+                    hit = groups[s.figure] = {
+                        figure: s.figure,
+                        name: SkyMap.figureName(s.figure),
+                        group: svgNode('g', { 'class': FIGURE_CLASS }),
+                        edges: []
+                    };
+                    constellationHits.push(hit);
+                    lines.appendChild(hit.group);
+                }
+                hit.group.appendChild(svgNode('line', edge));
+                hit.edges.push(edge);
             });
         frag.appendChild(lines);
         while (constellationSVG.firstChild) constellationSVG.removeChild(constellationSVG.firstChild);
@@ -333,17 +359,30 @@
         updateHover();
     }
 
-    /* ---- star names on hover ---------------------------------------------
+    /* ---- names on hover ---------------------------------------------------
      * Off by default. js/menu.js announces the setting on window — the
      * analogue of the address bar announcing a vantage change — so neither
      * file names the other.
      *
-     * The hit test is geometric rather than a listener per star, and has to
-     * be: the sky is painted as merged runs, so two adjacent stars sharing a
-     * twinkle class are a single <span> with nothing to attach to.
+     * The hit test is geometric rather than a listener per thing, and has to
+     * be, twice over. The sky is painted as merged runs, so two adjacent stars
+     * sharing a twinkle class are a single <span> with nothing to attach to.
+     * And the constellation overlay is `pointer-events: none` behind the
+     * scene — it has to be, or it would swallow the very mousemove that names
+     * the stars — so its lines never see a pointer either. Both are answered
+     * the same way: convert the pointer, then look it up.
+     *
+     * Stars are looked up by exact cell; figures by distance to a drawn line,
+     * because a line is a line and no cell contains it. The two are not rivals:
+     * near the end of a figure both answer, the star wins the label and the
+     * figure still lights up.
      */
     var HOVER_EVENT = 'settingschange';        // must match js/menu.js
     var LABEL_DX = 10, LABEL_DY = 6, LABEL_PAD = 6;
+    // How near a line counts as on it: about two fifths of a cell, wide enough
+    // to catch without a steady hand, narrow enough that two lines crossing
+    // the same patch of sky do not trade the highlight back and forth.
+    var HIT_RATIO = 0.4, HIT_MIN_PX = 3;
 
     var label = document.createElement('span');
     label.className = 'star-name';
@@ -356,7 +395,8 @@
     var hoverOn = false;
     var hoverNames = null;     // 'x:y' -> { name, id }, painted stars only
     var hoverBoxes = null;     // what the label must not be written across
-    var hoverKey = null;       // the cell the label currently describes
+    var hoverKey = null;       // what the label currently describes, tagged
+    var hoverFigure = null;    // the lit constellation, or null
     var ptrX = 0, ptrY = 0, ptrIn = false, ptrQueued = false;
     var hoverQuery = window.matchMedia ? window.matchMedia('(hover: hover)') : null;
 
@@ -388,6 +428,49 @@
     function hideLabel() {
         hoverKey = null;
         label.hidden = true;
+    }
+
+    function clearHighlight() {
+        if (hoverFigure) hoverFigure.group.setAttribute('class', FIGURE_CLASS);
+        hoverFigure = null;
+    }
+
+    /*
+     * A highlight cannot outlive a repaint: the <g> it points at is discarded
+     * and rebuilt. So put it back while those nodes are still on the page —
+     * a figure left lit behind `display: none` is a lie the DOM keeps telling
+     * — and drop the label's identity key with it, or updateHover() would skip
+     * the very write that re-lights the new group.
+     */
+    function resetHighlight() {
+        clearHighlight();
+        hoverKey = null;
+    }
+
+    // Distance from a point to a segment, clamped to the segment: a pointer
+    // past the end of a line is measured to the end, not to the infinite ray.
+    function edgeDistance(e, x, y) {
+        var dx = e.x2 - e.x1, dy = e.y2 - e.y1;
+        var len2 = dx * dx + dy * dy;
+        var t = len2 ? ((x - e.x1) * dx + (y - e.y1) * dy) / len2 : 0;
+        t = t < 0 ? 0 : (t > 1 ? 1 : t);
+        var px = e.x1 + t * dx - x, py = e.y1 + t * dy - y;
+        return Math.sqrt(px * px + py * py);
+    }
+
+    // Nearest figure within reach, in the overlay's own coordinates — which
+    // are the <pre>'s, since the SVG is positioned on its rect. Nearest rather
+    // than first, so where two figures pass close the pointer picks one and
+    // stays with it instead of flickering on data order.
+    function figureAt(x, y) {
+        var best = null, bestD = Math.max(HIT_MIN_PX, charWpx * HIT_RATIO);
+        constellationHits.forEach(function (hit) {
+            hit.edges.forEach(function (e) {
+                var d = edgeDistance(e, x, y);
+                if (d < bestD) { bestD = d; best = hit; }
+            });
+        });
+        return best;
     }
 
     // Does a label placed here lie across the moon or the cat?
@@ -445,7 +528,8 @@
     }
 
     function updateHover() {
-        if (!hoverOn || !ptrIn || !hoverNames || !(charWpx > 0 && lineHpx > 0)) {
+        if (!ptrIn || !(charWpx > 0 && lineHpx > 0) || (!hoverOn && !constellationsOn)) {
+            clearHighlight();
             hideLabel();
             return;
         }
@@ -456,26 +540,41 @@
         var col = Math.floor((ptrX - r.left) / charWpx);
         var row = Math.floor((ptrY - r.top) / lineHpx);
         var inGrid = col >= 0 && col < last.cols && row >= 0 && row < last.rows;
-        var key = col + ':' + row;
-        var star = inGrid ? hoverNames[key] : null;
-        if (!star) {
+        var star = inGrid && hoverOn && hoverNames ? hoverNames[col + ':' + row] : null;
+        /*
+         * The highlight belongs to the constellation setting alone: the lines
+         * are already on screen, and asking for a second setting before they
+         * will answer the pointer would be asking twice for the same thing.
+         * The NAME is the naming setting's, star or figure alike — one switch
+         * for "write down what I am pointing at".
+         */
+        var figure = inGrid && constellationsOn ? figureAt(ptrX - r.left, ptrY - r.top) : null;
+        if (figure !== hoverFigure) {
+            clearHighlight();
+            if (figure) figure.group.setAttribute('class', FIGURE_ON_CLASS);
+            hoverFigure = figure;
+        }
+        var key = star ? 'star:' + col + ':' + row : (hoverOn && figure ? 'figure:' + figure.figure : null);
+        if (!key) {
             hideLabel();
             return;
         }
         // Identity separately from placement, so the DOM write happens only
-        // when the cell actually changes.
+        // when what is being named actually changes.
         if (key !== hoverKey) {
             hoverKey = key;
-            label.textContent = star.id ? star.name + '  ' + star.id : star.name;
+            label.textContent = star
+                ? (star.id ? star.name + '  ' + star.id : star.name)
+                : figure.name;
             label.hidden = false;
         }
         placeLabel(col, row, r);
     }
 
     function onMove(e) {
-        // Gated first, so with the feature off — the default — a mousemove
-        // costs one comparison and never reaches the frame clock.
-        if (!hoverOn) return;
+        // Gated first, so with both features off — the default — a mousemove
+        // costs two comparisons and never reaches the frame clock.
+        if (!hoverOn && !constellationsOn) return;
         // Checked live, like the reduced-motion query. A tap synthesises one
         // mousemove and no mouseleave ever follows it, so without this a
         // touch device would light a label and keep it lit.
@@ -498,6 +597,7 @@
     // hidden behind it.
     pre.addEventListener('mouseleave', function () {
         ptrIn = false;
+        clearHighlight();
         hideLabel();
     });
 
@@ -514,15 +614,17 @@
             buildHoverNames();
             redraw();
             paintConstellations();
-            updateHover();
         }
         var on = !!(e && e.detail && e.detail.names);
-        if (on === hoverOn) return;
-        hoverOn = on;
-        if (!on) {
-            ptrIn = false;
-            hideLabel();
+        if (on !== hoverOn) {
+            hoverOn = on;
+            if (!on) hideLabel();
         }
+        // Nothing is listening for the pointer any more, so the last position
+        // it reported will be stale by the time something is: forget it rather
+        // than light up wherever the cursor happened to be left.
+        if (!hoverOn && !constellationsOn) ptrIn = false;
+        updateHover();
     });
 
     /* ---- idle animations ------------------------------------------------

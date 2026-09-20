@@ -699,18 +699,37 @@
 
     // Endpoints must survive horizon/viewport projection and scene occlusion.
     // Avoid joining opposite sides of the azimuth wrap in very wide views.
+    //
+    // Each edge carries the figure it belongs to, because a caller that wants
+    // to light up a whole constellation cannot recover that from a flat list:
+    // figures share endpoints, so the drawn lines are not separable by
+    // geometry afterwards. `figure` indexes CONSTELLATIONS, which is exported
+    // — one data path, not a name copied into every edge.
     function visibleSegments(positions, visible) {
         var out = [];
-        CONSTELLATIONS.forEach(function (c) {
+        CONSTELLATIONS.forEach(function (c, ci) {
             c.segments.forEach(function (s) {
                 var a = positions[s[0]], b = positions[s[1]];
                 if (!a || !b || !visible(a) || !visible(b)) return;
                 if (a.x === b.x && a.y === b.y) return;
                 if (Math.abs(a.x - b.x) * DEG_PER_COL >= 180) return;
-                out.push([a, b]);
+                out.push({ a: a, b: b, figure: ci });
             });
         });
         return out;
+    }
+
+    /*
+     * How a figure is written down. The generated data spells the IAU names
+     * without spaces (CanisMajor), which is right for a key and wrong for a
+     * label, so the split happens here rather than in the data: the file is
+     * regenerated from upstream and should stay a transcription of it.
+     * Returns '' for an index this table does not reach, like starLabel.
+     */
+    function figureName(index) {
+        var c = CONSTELLATIONS[index];
+        if (!c || !c.name) return '';
+        return c.name.replace(/([a-z])([A-Z])/g, '$1 $2');
     }
 
     /*
@@ -837,7 +856,8 @@
         parseView: parseView,
         formatFields: formatFields,
         formatView: formatView,
-        starLabel: starLabel
+        starLabel: starLabel,
+        figureName: figureName
     };
 
     if (typeof module !== 'undefined' && module.exports) {

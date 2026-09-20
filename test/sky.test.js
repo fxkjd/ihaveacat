@@ -121,6 +121,44 @@ test('segments require both endpoints and reject hidden, same-cell and azimuth-s
     assert.equal(SkyMap.visibleSegments(positions, () => true).length, 0);
 });
 
+test('every segment says which figure drew it', () => {
+    // Two figures at once, so "the right figure" is a claim and not a default.
+    const first = 0, last = SkyMap.CONSTELLATIONS.length - 1;
+    const positions = [];
+    const place = (fig, at) => {
+        const [a, b] = SkyMap.CONSTELLATIONS[fig].segments[0];
+        positions[a] = { x: at, y: 3 };
+        positions[b] = { x: at + 2, y: 5 };
+        return [a, b];
+    };
+    const [a0, b0] = place(first, 4);
+    place(last, 40);
+    const segs = SkyMap.visibleSegments(positions, () => true);
+    assert.equal(segs.length, 2);
+    assert.deepEqual(segs.map((s) => s.figure), [first, last],
+        'figures come back in catalogue order, each edge tagged with its own');
+    assert.deepEqual(segs[0].a, positions[a0]);
+    assert.deepEqual(segs[0].b, positions[b0]);
+    // The tag indexes CONSTELLATIONS — there is no second copy of the name.
+    assert.equal(SkyMap.CONSTELLATIONS[segs[0].figure].name, SkyMap.CONSTELLATIONS[first].name);
+});
+
+test('a figure is named the way it would be written, not the way it is keyed', () => {
+    const spaced = SkyMap.CONSTELLATIONS
+        .map((c, i) => SkyMap.figureName(i))
+        .filter((n) => n.indexOf(' ') >= 0);
+    assert.deepEqual(spaced, [
+        'Canes Venatici', 'Canis Major', 'Canis Minor', 'Coma Berenices',
+        'Corona Australis', 'Corona Borealis', 'Leo Minor', 'Piscis Austrinus',
+        'Triangulum Australe', 'Ursa Major', 'Ursa Minor'
+    ]);
+    assert.equal(SkyMap.figureName(0), 'Andromeda', 'a single word is left alone');
+    // Never throws and never invents a figure, like starLabel.
+    [-1, NaN, 1.5, 1e6, 'x', null, undefined].forEach((bad) => {
+        assert.equal(SkyMap.figureName(bad), '', `figureName(${String(bad)})`);
+    });
+});
+
 test('starCells is deterministic and stays inside the window', () => {
     const a = SkyMap.starCells({ ...VIEW, cols: 140, skyRows: 37 });
     const b = SkyMap.starCells({ ...VIEW, cols: 140, skyRows: 37 });

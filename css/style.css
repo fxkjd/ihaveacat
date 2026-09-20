@@ -66,6 +66,24 @@
         animation: none;
         transition: none;
     }
+    /*
+     * Each figure is its own `.constellation` group, which carries no styling
+     * of its own — it exists so that pointing at one line can light all of
+     * them with a single class write. The lit state is the twinkle keyframe's
+     * bright end, i.e. the colour already above at full strength: a hovered
+     * figure is the sky it was, turned up, and nothing new joins the palette.
+     *
+     * No transition, like everything else here. A figure that faded in would
+     * be an animation on the one part of the drawing that promises to hold
+     * still, and it would have to be cancelled under reduced motion — which
+     * would take the highlight away from people who asked for less movement,
+     * not less information.
+     */
+    .constellations .constellation-on line {
+        stroke-opacity: 1;
+        animation: none;
+        transition: none;
+    }
     .collar {
     	color: #C00000;
     }

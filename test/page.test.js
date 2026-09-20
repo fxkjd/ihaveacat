@@ -282,3 +282,18 @@ test('constellation strokes use the dim star state without twinkle or transition
     }
     assert.match(lines, /stroke-linecap:\s*butt/);
 });
+
+test('a hovered figure brightens to the star colour, with nothing animated', () => {
+    const css = readFile('css/style.css');
+    // Named here because no walker sees a class main.js owns: the scene walker
+    // reads buildScene's runs and the menu walker reads Menu.rows().
+    const lit = /\.constellations \.constellation-on line\s*\{([^}]+)\}/.exec(css);
+    assert.ok(lit, 'the highlighted state of a constellation is never styled');
+    // The twinkle keyframe's bright end, not a colour of its own.
+    assert.match(lit[1], /stroke-opacity:\s*1\b/);
+    assert.match(css, /0%,\s*100%\s*\{\s*opacity:\s*1/);
+    assert.match(lit[1], /animation:\s*none/);
+    assert.match(lit[1], /transition:\s*none/);
+    // The group class itself is only a handle for that one write.
+    assert.match(css, /\.constellation\b/);
+});

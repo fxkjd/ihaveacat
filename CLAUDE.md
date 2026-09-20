@@ -50,7 +50,8 @@ All of the above are enforced by tests.
   URL hash. It also carries `NAMES`/`IDS` — parallel to the catalog by index,
   covering every star down to `SKY_MAG_LIMIT` — plus `EXTRA_NAMES`/`EXTRA_IDS`,
   keyed by index, for the constellation endpoints below it, and
-  `starLabel(index)` over both.
+  `starLabel(index)` over both. `visibleSegments` tags each edge with the
+  figure that drew it, and `figureName(i)` spells that figure out.
   Pure like moon.js: the **date is an argument** — no clock, no
   randomness, no DOM (enforced by a test). The catalog is the map, not the
   view: seasons and hours come from the sidereal formula, and the data itself
@@ -312,6 +313,18 @@ what you read and what the URL says can never drift apart.
   `STAR_GAP_RATIO` (0.18 of the narrower cell dimension, floored at a pixel) is
   the knob; at that size no segment is lost at any viewport, which is the
   constraint — two stars in adjacent cells must still be joined.
+- **Each figure is its own `<g class="constellation">`** inside the masked
+  group, so hovering one line can light all of them with a single class write.
+  `constellation-on` is the lit state: the twinkle keyframe's bright end, i.e.
+  the same white at full opacity. Nothing new enters the palette and nothing
+  transitions.
+- **The figure hit test is geometric**, like the star one and for a second
+  reason on top of it: the overlay is `pointer-events: none` behind the scene
+  — it has to be, or it would swallow the mousemove that names the stars — so
+  its lines never see a pointer. `main.js` keeps the drawn edges and measures
+  the pointer's distance to them. A highlight cannot outlive a repaint, which
+  discards the `<g>` nodes, so `paintConstellations` puts it back and drops the
+  label's identity key before rebuilding.
 - The star-names toggle is **session-only and deliberately not in the
   fragment**. The fragment is a shareable description of *what is drawn*; a
   display preference is neither shareable nor a property of the sky. Having no
@@ -369,7 +382,8 @@ HD 98231 to the existing HYG 118742 component, without proximity matching.
 
 Hovering a star names it — the proper name where the star has one, otherwise
 the Bayer designation spelled out, otherwise the catalogue number. Off by
-default, behind the panel's `name` toggle.
+default, behind the panel's `name` toggle. With constellations on, hovering a
+line names the figure the same way and lights the whole of it.
 
 **The catalogue number appears only where the label is not really a name.**
 `Vega` needs no HD number beside it; `Alpha Lupi` does, because a designation
@@ -427,6 +441,12 @@ rest are a number standing alone.
 - **Both lookups go through `hasOwnProperty`.** A plain `NAMES[index]` answers
   `'constructor'` with a Function and calls it a star, and the index reaches
   `starLabel` from a hovered cell, so a string is not hypothetical.
+- **The name is the naming setting's, the highlight is the constellation
+  setting's.** Hovering a figure writes its name into the same `.star-name`
+  label, gated on the `name` toggle; the lines light up on the constellation
+  setting alone, because they are already on screen and asking twice for the
+  same thing would be asking twice. Where both answer — near the end of a
+  figure — the star wins the label and the figure still lights.
 - The naming rule lives once, in `tools/catalog.js`: proper name, else the
   Bayer designation spelled out from `tools/data/designations.json`, else
   Flamsteed, else the catalogue number standing in as the name. Generation
