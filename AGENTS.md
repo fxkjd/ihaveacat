@@ -294,6 +294,15 @@ what you read and what the URL says can never drift apart.
   look less like the rest of the drawing.
 - Every direction slot is three cells (`(s)` marked, ` s ` not), so clicking one
   cannot shift the row, and the brackets carry the state with no colour at all.
+- **A tap-target overhang never covers another control.** The buttons grow
+  their targets 0.7em up and down with `::after`s, which reaches past the
+  middle of the next row, and a later button paints over an earlier one: the
+  density row took most of the constellations switch — disabled `medium`
+  then swallowed the click that would turn the figures off — and the compass
+  took the bottom of the longitude field. The overhangs carry `z-index: -1`
+  (inside `.menu`'s stacking context), so they only claim space no real box
+  is drawn in. A disabled density slot drops its overhang: its opacity makes
+  it a stacking context of its own, which would lift the overhang back up.
 - No click-outside-to-close, no geolocation, no presets: the
   fragment *is* the state, and it is already shareable.
 - The **constellations** preference defaults off and persists in the guarded

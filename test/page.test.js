@@ -247,6 +247,29 @@ test('the menu box absorbs the buttons\' tap-target overhang', () => {
     });
 });
 
+test('a tap-target overhang never covers another control', () => {
+    // The overhangs reach 0.7em into the neighbouring rows, and a later
+    // button paints over an earlier one. With the density row between the
+    // two toggles, `medium`'s overhang took most of the constellations
+    // switch — and while the figures are on, `medium` is disabled, so the
+    // click that would turn them off landed on a button that ignores it.
+    // Painted beneath every real box, an overhang only claims empty space.
+    const css = readFile('css/style.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    const menu = /\.menu\s*\{([^{}]*)\}/.exec(css);
+    assert.match(menu[1], /position:\s*fixed/);
+    assert.match(menu[1], /z-index:\s*\d/,
+        '.menu must be a stacking context, or a negative z-index drops the overhangs behind the page');
+    const overhangs = [...css.matchAll(/((?:\.menu-[\w-]+::after\s*,?\s*)+)\{([^{}]*)\}/g)]
+        .filter((m) => /bottom:\s*-/.test(m[2]));
+    assert.ok(overhangs.length, 'no ::after overhang found');
+    overhangs.forEach((m) => assert.match(m[2], /z-index:\s*-1/,
+        `${m[1].trim()} must sit beneath the controls it overhangs`));
+    // opacity makes the disabled slot its own stacking context, which would
+    // lift its overhang back over its neighbours; it answers nothing anyway.
+    assert.match(css, /\.menu-density:disabled::after\s*\{[^{}]*content:\s*none/,
+        'a disabled density slot must drop its overhang');
+});
+
 test('the menu is chrome only: no animation loop, no randomness, no innerHTML', () => {
     const src = readFile('js/menu.js');
     assert.doesNotMatch(src, /innerHTML/);

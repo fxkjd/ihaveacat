@@ -282,10 +282,18 @@
      * horizontal overhang would put each one's hit area over its neighbour's,
      * and the later sibling paints on top: 'w' would quietly swallow taps
      * meant for 's'. Each slot is already three characters wide.
+     *
+     * The same trap runs vertically: 0.7em reaches past the middle of the
+     * next row, where a later button's overhang painted over the earlier
+     * row's controls — the compass took the bottom of the longitude field,
+     * and the density row most of the constellations switch. z-index: -1
+     * puts every overhang beneath every real box in .menu's stacking
+     * context, so it only ever claims space nothing else is drawn in.
      */
     .menu-dir::after {
 	content: "";
 	position: absolute;
+	z-index: -1;
 	top: -0.7em;
 	right: 0;
 	bottom: -0.7em;
@@ -322,6 +330,7 @@
     .menu-toggle::after, .menu-density::after {
 	content: "";
 	position: absolute;
+	z-index: -1;
 	top: -0.7em;
 	right: 0;
 	bottom: -0.7em;
@@ -338,6 +347,12 @@
     .menu-density:disabled {
 	opacity: 0.4;
 	cursor: default;
+    }
+    /* The opacity makes a disabled slot its own stacking context, which
+       would lift its overhang back over its neighbours — and a slot that
+       answers nothing has no business growing its target. */
+    .menu-density:disabled::after {
+	content: none;
     }
     /*
      * The hovered star's name. A <span>, not a <div>: the bare `div` rule at
