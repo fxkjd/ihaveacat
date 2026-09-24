@@ -29,6 +29,7 @@ test('the panel is drawn exactly as designed', () => {
         ' dir   n  e (s) w ',
         '',
         ' constellations ( )',
+        ' star  low (medium) high ',
         ' name ( )'
     ]);
 });
@@ -57,11 +58,66 @@ test('the toggle keeps the panel label column', () => {
     // ' name ' is six cells, so the mark starts where '[' and the first
     // compass slot do.
     const text = textOf(BCN);
-    const [lat, dir, name] = [text[2], text[4], text[7]];
+    const [lat, dir, stars, name] = [text[2], text[4], text[7], text[8]];
     assert.equal(lat.indexOf('▼'), 5);
     assert.equal(lat.indexOf('['), 7);
     assert.equal(dir.indexOf(' n '), 6);
+    assert.equal(stars.indexOf(' low '), 6);
     assert.equal(name.indexOf('( )'), 6);
+});
+
+// The density row, found by what it holds, like the compass row.
+function densityRow(settings) {
+    return Menu.rows(BCN, settings).find((row) => row.some((seg) => seg.density));
+}
+function marked(row, onClass) {
+    return row.filter((s) => s.cls && s.cls.indexOf(onClass) >= 0);
+}
+
+test('the density slots are the sky module\'s densities, in order', () => {
+    // Duplicated because rows() must stand alone without sky.js; this is
+    // what keeps the two lists together.
+    assert.deepEqual(Menu.DENSITIES, SkyMap.DENSITIES);
+    assert.deepEqual(densityRow().filter((s) => s.density).map((s) => s.density), Menu.DENSITIES);
+});
+
+test('the density row marks one slot, and marking it shifts nothing', () => {
+    const widths = Menu.DENSITIES.map((density) => {
+        const row = densityRow({ density });
+        const on = marked(row, 'menu-density-on');
+        assert.equal(on.length, 1, density);
+        assert.equal(on[0].density, density);
+        assert.equal(on[0].text, '(' + density + ')');
+        assert.doesNotMatch(on[0].cls, /\bmenu-label\b/);
+        row.filter((s) => s.density && s.density !== density).forEach((s) => {
+            assert.equal(s.text, ' ' + s.density + ' ');
+            assert.match(s.cls, /\bmenu-label\b/);
+        });
+        return Menu.rowText(row).length;
+    });
+    assert.deepEqual(widths, widths.map(() => widths[0]));
+});
+
+test('medium is marked unless the panel is asked for another density', () => {
+    [undefined, {}, { density: 'dense' }, { density: '' }].forEach((settings) => {
+        assert.equal(marked(densityRow(settings), 'menu-density-on')[0].density, 'medium');
+    });
+});
+
+test('constellations mark high and disable the other densities', () => {
+    // Whatever density is handed in: the figures need their faint stars, so
+    // the panel cannot draw a state the sky could not be in.
+    Menu.DENSITIES.forEach((density) => {
+        const row = densityRow({ constellations: true, density });
+        assert.equal(marked(row, 'menu-density-on')[0].density, 'high', density);
+        const slots = row.filter((s) => s.density);
+        assert.deepEqual(slots.map((s) => !!s.disabled), [true, true, false]);
+    });
+    // And off again, every slot answers.
+    Menu.DENSITIES.forEach((density) => {
+        const slots = densityRow({ density }).filter((s) => s.density);
+        assert.deepEqual(slots.map((s) => !!s.disabled), [false, false, false]);
+    });
 });
 
 test('the brackets hold the same columns on both value rows', () => {

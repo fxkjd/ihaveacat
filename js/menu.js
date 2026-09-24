@@ -23,9 +23,14 @@
     var FIELDS = ['lat', 'lon'];
     var ROSE = ['n', 'e', 's', 'w'];
     var TOGGLES = ['constellations', 'name'];
+    // Must match SkyMap.DENSITIES (a test pins the two together). Copied, not
+    // read, because rows() stands alone with no sky module loaded.
+    var DENSITIES = ['low', 'medium', 'high'];
+    var DEFAULT_DENSITY = 'medium';
     var CONSTELLATIONS_KEY = 'ihaveacat.constellations';
     var VIEW_KEY = 'ihaveacat.view';
     var NAMES_KEY = 'ihaveacat.names';
+    var DENSITY_KEY = 'ihaveacat.density';
     var TOGGLE_ON = '(x)', TOGGLE_OFF = '( )';
     var TITLE = 'settings';
     var GEAR = '⚙︎';
@@ -36,6 +41,28 @@
 
     function rep(ch, n) { return n > 0 ? new Array(n + 1).join(ch) : ''; }
     function label(text) { return { text: text, cls: 'menu-label' }; }
+    function densityOf(d) { return DENSITIES.indexOf(d) >= 0 ? d : DEFAULT_DENSITY; }
+
+    /*
+     * The star density, marked like the compass: every slot is its word in
+     * brackets or in spaces, so marking one cannot shift the row. The figures
+     * need their faint stars, so with constellations on the row can only say
+     * high and the other two are disabled — whatever density it is handed,
+     * rows() cannot draw a state the sky could not be in.
+     */
+    function densityRow(s) {
+        var locked = !!s.constellations;
+        var current = locked ? 'high' : densityOf(s.density);
+        return [label(' star ')].concat(DENSITIES.map(function (d) {
+            var on = d === current;
+            return {
+                density: d,
+                text: on ? '(' + d + ')' : ' ' + d + ' ',
+                cls: on ? 'menu-density menu-density-on' : 'menu-density menu-label',
+                disabled: locked && d !== 'high'
+            };
+        }));
+    }
 
     /*
      * The panel as rows of {text, cls} segments — the same shape scene.js
@@ -100,6 +127,9 @@
                     cls: lit ? 'menu-toggle menu-toggle-on' : 'menu-toggle menu-label'
                 }
             ]);
+            // Directly below the switch that can lock it, so the dependency
+            // reads top to bottom.
+            if (name === 'constellations') out.push(densityRow(s));
         });
         return out;
     }
@@ -121,18 +151,25 @@
     function install(doc, win) {
         var sky = win.SkyMap;
         var hash = win.location ? win.location.hash : '';
-        var settings = { name: false, constellations: false };
+        var settings = { name: false, constellations: false, density: DEFAULT_DENSITY };
         // Shared URLs win over the saved vantage. Blocked storage is harmless.
         try {
             if (!hash) hash = win.localStorage.getItem(VIEW_KEY) || '';
         } catch (e) {}
         try { settings.name = win.localStorage.getItem(NAMES_KEY) === 'true'; } catch (e) {}
         try { settings.constellations = win.localStorage.getItem(CONSTELLATIONS_KEY) === 'true'; } catch (e) {}
+        try { settings.density = densityOf(win.localStorage.getItem(DENSITY_KEY)); } catch (e) {}
+        // Any other saved density beside saved constellations is a state the
+        // panel cannot reach; load it as the one it would have left behind.
+        if (settings.constellations && settings.density !== 'high') {
+            settings.density = 'high';
+            store(DENSITY_KEY, 'high');
+        }
         var view = sky.parseView(hash);
         if (hash && win.location && !win.location.hash) {
             win.location.hash = sky.formatView(view);
         }
-        var inputs = {}, dirs = {}, toggles = {};
+        var inputs = {}, dirs = {}, toggles = {}, densities = {};
         var hold = null;
 
         function stopHold() { hold = null; }
@@ -150,6 +187,10 @@
                 win.setTimeout(repeat, active.delay);
             }
             win.setTimeout(repeat, 500);
+        }
+
+        function store(key, value) {
+            try { win.localStorage.setItem(key, String(value)); } catch (e) {}
         }
 
         function saveView() {
@@ -176,6 +217,9 @@
                         mark(dirs[seg.dir], seg, 'menu-dir-on');
                     } else if (seg.toggle) {
                         mark(toggles[seg.toggle], seg, 'menu-toggle-on');
+                    } else if (seg.density) {
+                        mark(densities[seg.density], seg, 'menu-density-on');
+                        densities[seg.density].disabled = !!seg.disabled;
                     }
                 });
             });
@@ -238,15 +282,33 @@
         function announce() {
             if (!win.CustomEvent || !win.dispatchEvent) return;   // degrade, don't throw
             win.dispatchEvent(new win.CustomEvent(SETTINGS_EVENT, {
-                detail: { names: settings.name, constellations: settings.constellations }
+                detail: {
+                    names: settings.name,
+                    constellations: settings.constellations,
+                    density: settings.density
+                }
             }));
         }
 
         function setToggle(name) {
             settings[name] = !settings[name];
-            try {
-                win.localStorage.setItem(name === 'constellations' ? CONSTELLATIONS_KEY : NAMES_KEY, String(settings[name]));
-            } catch (e) {}
+            store(name === 'constellations' ? CONSTELLATIONS_KEY : NAMES_KEY, settings[name]);
+            // The figures bring high density with them and leave it behind
+            // when they go: turning them off is not a request for fewer stars.
+            if (name === 'constellations' && settings.constellations) {
+                settings.density = 'high';
+                store(DENSITY_KEY, 'high');
+            }
+            sync(true);
+            announce();
+        }
+
+        function setDensity(d) {
+            // Refused here and not only by `disabled`: the lock is a rule of
+            // the setting, and the button is just one way in.
+            if (settings.constellations && d !== 'high') return;
+            settings.density = densityOf(d);
+            store(DENSITY_KEY, settings.density);
             sync(true);
             announce();
         }
@@ -350,6 +412,15 @@
                 el.addEventListener('click', function () { setToggle(seg.toggle); });
                 el.addEventListener('keydown', onButtonKey);
                 toggles[seg.toggle] = el;
+            } else if (seg.density) {
+                el = doc.createElement('button');
+                el.type = 'button';
+                el.textContent = seg.text;
+                el.disabled = !!seg.disabled;
+                el.setAttribute('aria-label', seg.density + ' star density');
+                el.addEventListener('click', function () { setDensity(seg.density); });
+                el.addEventListener('keydown', onButtonKey);
+                densities[seg.density] = el;
             } else {
                 el = doc.createElement('span');
                 el.textContent = seg.text;
@@ -439,6 +510,7 @@
         FIELDS: FIELDS,
         ROSE: ROSE,
         TOGGLES: TOGGLES,
+        DENSITIES: DENSITIES,
         TITLE: TITLE,
         SETTINGS_EVENT: SETTINGS_EVENT,
         GEAR: GEAR,

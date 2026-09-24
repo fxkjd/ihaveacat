@@ -79,21 +79,46 @@ test('the catalog is whole-sphere, brightest-first, naked-eye', () => {
 
 const VIEW = { date: new Date('2026-08-06T21:00:00Z'), lat: 41.39, lon: 2.17, azimuth: 180 };
 
-test('only required stars receive the enabled magnitude exception', () => {
+test('each star density is a magnitude cutoff, and only high adds the figures', () => {
+    // Pinned to the numbers, not to our own constants: low is 3.3 and medium
+    // 3.6 by the owner's decision, and high is medium plus every star a
+    // constellation draws, which is what the figures need to be whole.
     const required = new Set(SkyMap.CONSTELLATIONS.flatMap(c => c.segments.flat()));
+    assert.deepEqual(SkyMap.DENSITIES, ['low', 'medium', 'high']);
+    assert.equal(SkyMap.DEFAULT_DENSITY, 'medium');
+    const counts = { low: 0, medium: 0, high: 0 };
     for (let i = 0; i < SkyMap.CATALOG.length / 3; i++) {
-        const normal = SkyMap.CATALOG[i * 3 + 2] <= 3.6;
-        assert.equal(SkyMap.starEnabled(i, false), normal);
-        assert.equal(SkyMap.starEnabled(i, true), normal || required.has(i));
+        const mag = SkyMap.CATALOG[i * 3 + 2];
+        assert.equal(SkyMap.starEnabled(i, 'low'), mag <= 3.3);
+        assert.equal(SkyMap.starEnabled(i, 'medium'), mag <= 3.6);
+        assert.equal(SkyMap.starEnabled(i, 'high'), mag <= 3.6 || required.has(i));
+        // Garbage is the default, the same rule parseView follows.
+        [undefined, '', 'HIGH', 'dense', true].forEach((junk) => {
+            assert.equal(SkyMap.starEnabled(i, junk), mag <= 3.6);
+        });
+        SkyMap.DENSITIES.forEach((d) => { if (SkyMap.starEnabled(i, d)) counts[d]++; });
     }
-    assert.equal(SkyMap.starEnabled(-1, true), false);
+    assert.deepEqual(counts, { low: 246, medium: 343, high: 781 });
+    SkyMap.DENSITIES.forEach((d) => assert.equal(SkyMap.starEnabled(-1, d), false));
+});
+
+test('starCells draws the density it is asked for and nothing else', () => {
+    const ofDensity = (density) =>
+        SkyMap.starCells({ ...VIEW, cols: 360, skyRows: 46, density });
+    const low = ofDensity('low'), medium = ofDensity('medium'), high = ofDensity('high');
+    assert.ok(low.length < medium.length && medium.length < high.length,
+        `${low.length} / ${medium.length} / ${high.length}`);
+    assert.deepEqual(SkyMap.starCells({ ...VIEW, cols: 360, skyRows: 46 }), medium);
+    [['low', low], ['medium', medium], ['high', high]].forEach(([d, cells]) => {
+        cells.forEach((s) => assert.ok(SkyMap.starEnabled(s.index, d), `${d} drew star ${s.index}`));
+    });
 });
 
 test('shared projections preserve collided endpoint identities without duplicate ASCII cells', () => {
     let collisions = 0, faint = 0, hidden = 0;
     for (const lat of [-50, 0, 50]) {
         const positions = [];
-        const opts = { ...VIEW, lat, cols: 360, skyRows: 46, constellations: true, positions };
+        const opts = { ...VIEW, lat, cols: 360, skyRows: 46, density: 'high', positions };
         const cells = SkyMap.starCells(opts);
         assert.equal(new Set(cells.map(s => s.x + ':' + s.y)).size, cells.length);
         positions.forEach((p, i) => {
@@ -115,7 +140,7 @@ test('shared projections preserve collided endpoint identities without duplicate
 test('positions are recorded for constellation endpoints only', () => {
     const endpoints = new Set(SkyMap.CONSTELLATIONS.flatMap(c => c.segments.flat()));
     const positions = [];
-    SkyMap.starCells({ ...VIEW, cols: 200, skyRows: 46, constellations: true, positions });
+    SkyMap.starCells({ ...VIEW, cols: 200, skyRows: 46, density: 'high', positions });
     positions.forEach((p, i) => assert.ok(endpoints.has(i), `star ${i} draws no figure`));
     assert.ok(positions.some(Boolean));
 });
@@ -149,7 +174,7 @@ test('Hydra keeps its edges across the horizon and Virgo across the moon (Barcel
     const count = (name, date) => {
         const positions = [];
         SkyMap.starCells({ date, lat: 41.39, lon: 2.17, azimuth: 180, cols, skyRows: L.fenceTop,
-            constellations: true, positions });
+            density: 'high', positions });
         const ci = SkyMap.CONSTELLATIONS.findIndex(c => c.name === name);
         const visible = p => Scene.starVisible(p, L);
         const segs = SkyMap.visibleSegments(positions, visible).filter(s => s.figure === ci);
@@ -274,8 +299,9 @@ test('glyphs follow brightness: * brightest, then \', then .', () => {
 });
 
 test('a wider magnitude limit only ever adds stars', () => {
-    // SKY_MAG_LIMIT is the density knob; check the invariant the knob relies
-    // on: the visible set at the current limit is exactly the bright prefix.
+    // SKY_MAG_LIMIT is medium's cutoff and the calibrated default; check the
+    // invariant the knob relies on: the visible set at the current limit is
+    // exactly the bright prefix. Low's cutoff is a shorter prefix of it.
     for (let i = 3; i < SkyMap.CATALOG.length; i += 3) {
         if (SkyMap.CATALOG[i + 2] > SkyMap.SKY_MAG_LIMIT) {
             assert.ok(SkyMap.CATALOG[i - 1] <= SkyMap.CATALOG[i + 2] + 1e-9);
@@ -283,6 +309,7 @@ test('a wider magnitude limit only ever adds stars', () => {
     }
     assert.ok(SkyMap.SKY_BRIGHT_MAG < SkyMap.SKY_MID_MAG);
     assert.ok(SkyMap.SKY_MID_MAG < SkyMap.SKY_MAG_LIMIT);
+    assert.ok(SkyMap.SKY_LOW_MAG_LIMIT < SkyMap.SKY_MAG_LIMIT);
 });
 
 // ---- The vantage point from the URL hash ---------------------------------

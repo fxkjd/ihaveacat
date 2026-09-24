@@ -72,8 +72,8 @@ All of the above are enforced by tests.
   the first paint, the static fallback is left alone. It also owns the
   hover-to-name lookup and its floating label (see **Star names** below).
 - `js/menu.js` — the settings panel: a gear in the top-right that opens a small
-  ASCII readout for latitude, longitude, facing direction and the star-names
-  toggle. Split like the
+  ASCII readout for latitude, longitude, facing direction, the constellations
+  and star-names toggles, and the star density. Split like the
   rest: `rows(fields, settings)` is **pure** art over pre-formatted strings, in the same
   `{text, cls}` shape `scene.js` emits (so `test/menu.test.js` pins the drawing
   with no DOM at all); `install()` is the wiring. It writes the URL fragment and
@@ -142,8 +142,13 @@ point that cannot fail. Sweep the fractional row; start the clock late.
   between the legs, greying out the cat's base.
 - **The stars are the real sky** — Barcelona looking south by default, any
   vantage via the hash fragment, frozen at the load instant (refreshing is how
-  time advances; same contract as the moon phase). `SKY_MAG_LIMIT` (3.6) is
-  the one density knob, calibrated to the original ~1.1%; brightness maps to
+  time advances; same contract as the moon phase). The panel's star density
+  picks the cutoff: `SKY_MAG_LIMIT` (3.6) is **medium**, the default,
+  calibrated to the original ~1.1%; **low** is `SKY_LOW_MAG_LIMIT` (3.3, the
+  owner's choice); **high** is medium plus every constellation endpoint down
+  to magnitude 6.5 — exactly what the figures draw. `starEnabled(index,
+  density)` is the one predicate, and any other density reads as medium.
+  Brightness maps to
   the original glyphs (`*` ≤ 2.0, `'` ≤ 3.0, `.` fainter). **The moon stays
   anchored above the cat wherever the real moon is — the one unreal object,
   on purpose.** The seeded hash stars remain as scene.js's fallback whenever
@@ -296,6 +301,18 @@ what you read and what the URL says can never drift apart.
   with names. Names persist in `ihaveacat.names`, and the formatted vantage
   in `ihaveacat.view`. A nonempty URL fragment takes precedence over the saved
   vantage; storage failures never prevent changing settings.
+- The **star density** row (`star  low (medium) high`) sits directly under
+  constellations, marked like the compass so marking a slot shifts nothing.
+  It persists in `ihaveacat.density` and travels in `settingschange` as
+  `density`; an absent or unknown value is medium. **Constellations on forces
+  high and disables low and medium; turning them off leaves high selected
+  and re-enables the other two** — the owner's decision: switching the
+  figures off is not a request for fewer stars. The lock lives in three
+  places on purpose: `rows()` cannot draw another slot marked while
+  constellations are on, `setDensity` refuses it (not just `disabled`), and
+  `main.js` renders high whenever the figures are on, because a figure
+  without its faint endpoints has no positions for them and comes apart. A
+  saved constellations-on beside any other saved density loads as high.
 - Coordinate rows use `lat ▼ [number] ▲` (and `lon`). Each arrow steps by 1°
   and clamps at ±90° latitude or ±180° longitude; typed invalid values are
   still rejected.

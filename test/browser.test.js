@@ -64,7 +64,7 @@ test('constellations align on resize and orientation, mask foreground, and resto
         assert.equal(parseFloat(svg.style.height), L.fenceTop * lineH);
         const positions = [];
         const stars = SkyMap.starCells({ date: new Date(now), ...SkyMap.DEFAULT_VIEW,
-            cols: L.cols, skyRows: L.fenceTop, constellations: true, positions });
+            cols: L.cols, skyRows: L.fenceTop, density: 'high', positions });
         const fontSize = parseFloat(page.pre.style.fontSize);
         const gap = Scene.starGap(charW, lineH);
         const visible = stars.filter(s => Scene.starVisible(s, L));
@@ -113,6 +113,9 @@ test('constellations align on resize and orientation, mask foreground, and resto
     page.dir('s').click(); page.tick();
     page.constellationToggle().click();
     assert.equal(svg.style.display, 'none');
+    // Turning the figures off leaves their high density behind on purpose;
+    // choosing medium again is what brings back the scene they started from.
+    page.density('medium').click();
     assert.deepEqual(page.pre.children.map(r => JSON.stringify(r.children?.map(c => [c.textContent, c.className, c.nodeValue]))), baseline);
     assert.deepEqual(page.errors, []);
 });
@@ -202,7 +205,8 @@ function element(tag, doc) {
             (this.listeners[type] || []).forEach((fn) => fn(ev));
             return ev;
         },
-        click() { return this.dispatch('click'); },
+        // A real click() on a disabled button does nothing at all.
+        click() { return this.disabled ? undefined : this.dispatch('click'); },
         // Focusing one element blurs whatever held focus before it, which is
         // the whole reason a commit-on-blur can be tested here at all.
         focus() {
@@ -424,6 +428,7 @@ function loadPage(options) {
         label() { return this.byClass('star-name')[0]; },
         toggle() { return this.byClass('menu-toggle').find(b => b.attributes['aria-label'] === 'star names'); },
         constellationToggle() { return this.byClass('menu-toggle').find(b => b.attributes['aria-label'] === 'Constellations'); },
+        density(d) { return this.byClass('menu-density').find(b => b.attributes['aria-label'] === d + ' star density'); },
         orientation() { win.dispatchEvent(new win.CustomEvent('orientationchange')); },
         rect() { return pre.getBoundingClientRect(); },
         // A pixel inside a grid cell. fx/fy pick where in the cell, so a test
@@ -1338,7 +1343,7 @@ function figuresFor(page) {
     const charW = fontSize * 0.6, lineH = parseFloat(page.pre.style.lineHeight);
     const positions = [];
     const stars = SkyMap.starCells({ date: new Date(HOVER_NOW), ...SkyMap.DEFAULT_VIEW,
-        cols: L.cols, skyRows: L.fenceTop, constellations: true, positions });
+        cols: L.cols, skyRows: L.fenceTop, density: 'high', positions });
     const boxes = new Map(stars.filter((s) => Scene.starVisible(s, L)).map((s) => [s.x + ':' + s.y,
         Scene.starInkBox(s, glyphMetrics(s.char, fontSize), charW, lineH, fontSize * 0.8,
             Scene.starGap(charW, lineH))]));
@@ -1453,7 +1458,7 @@ test('a line running behind the moon is not hit where the mask hides it', () => 
         p.y >= L.moonBox.top && p.y <= L.moonBox.bottom;
     const positions = [];
     SkyMap.starCells({ date: new Date(HOVER_NOW), ...SkyMap.DEFAULT_VIEW,
-        cols: L.cols, skyRows: L.fenceTop, constellations: true, positions });
+        cols: L.cols, skyRows: L.fenceTop, density: 'high', positions });
     const seg = SkyMap.visibleSegments(positions, (p) => Scene.starVisible(p, L))
         .find((s) => (Scene.starVisible(s.a, L) && inMoon(s.b)) || (Scene.starVisible(s.b, L) && inMoon(s.a)));
     assert.ok(seg, 'the fixture should have a figure with a star behind the moon');
@@ -1588,13 +1593,32 @@ test('the stars the setting adds are named like any other', () => {
         assert.equal(page.label().textContent, labelFor(s));
     });
 
-    // And they go back to not being there at all when the setting is off.
+    // And they go back to not being there at all when the setting is off
+    // and the density is the default (an absent density is medium).
     page.setSettings({ names: true, constellations: false });
     page.tick();
     page.hover(faint[0].x, faint[0].y);
     page.tick();
     assert.equal(page.label().textContent === labelFor(faint[0]) && !page.label().hidden, false,
         'a star only the constellations draw is still named with them off');
+    assert.deepEqual(page.errors, []);
+});
+
+test('the faint stars high density adds are named without the constellations', () => {
+    const page = hoverPage();
+    page.setSettings({ names: true, constellations: false, density: 'high' });
+    page.tick();
+    const info = figuresFor(page);
+    const faint = info.stars.filter((s) =>
+        SkyMap.CATALOG[s.index * 3 + 2] > SkyMap.SKY_MAG_LIMIT && Scene.starVisible(s, info.layout));
+    assert.ok(faint.length > 20, `only ${faint.length} faint stars on screen`);
+    faint.forEach((s) => {
+        page.hover(s.x, s.y);
+        page.tick();
+        assert.equal(page.label().hidden, false, `the high-density star at ${s.x},${s.y} was not named`);
+        assert.equal(page.label().textContent, labelFor(s));
+    });
+    assert.equal(page.byClass('constellation-on').length, 0);
     assert.deepEqual(page.errors, []);
 });
 
@@ -1747,4 +1771,110 @@ test('unavailable or corrupt storage leaves settings usable', () => {
         assert.equal(page.toggle().attributes['aria-pressed'], 'true');
         assert.deepEqual(page.errors, []);
     }
+});
+
+/* ---- star density ------------------------------------------------------- */
+
+function densityPage(extra) {
+    const page = loadPage({ now: HOVER_NOW, reducedMotion: true, ...(extra || {}) });
+    page.resize(HOVER_W, HOVER_H);
+    page.tick();
+    return page;
+}
+
+// Star glyphs actually painted into the <pre>, counted off the runs.
+function paintedStars(page) {
+    let n = 0;
+    page.pre.children.forEach((row) => (row.children || []).forEach((run) => {
+        if (/^star\b/.test(run.className || '')) n += run.textContent.replace(/ /g, '').length;
+    }));
+    return n;
+}
+
+// What a density should paint, recomputed from the pure modules.
+function expectedStars(density) {
+    const grid = gridFor(HOVER_W, HOVER_H);
+    const L = Scene.layout(grid.cols, grid.rows);
+    return SkyMap.starCells({ date: new Date(HOVER_NOW), ...SkyMap.DEFAULT_VIEW,
+        cols: grid.cols, skyRows: L.fenceTop, density }).filter((s) => Scene.starVisible(s, L)).length;
+}
+
+test('each star density paints its own sky, and medium is the default', () => {
+    const page = densityPage();
+    assert.equal(page.density('medium').attributes['aria-pressed'], 'true');
+    assert.equal(paintedStars(page), expectedStars('medium'));
+    const counts = {};
+    ['low', 'high', 'medium'].forEach((d) => {
+        page.density(d).click();
+        page.tick();
+        counts[d] = paintedStars(page);
+        assert.equal(counts[d], expectedStars(d), d);
+        assert.equal(page.density(d).attributes['aria-pressed'], 'true', d);
+    });
+    assert.ok(counts.low < counts.medium && counts.medium < counts.high, JSON.stringify(counts));
+    // A display preference: it draws no figures and never touches the URL.
+    assert.equal(page.byClass('constellations').length, 0);
+    assert.equal(page.hash(), '');
+    assert.deepEqual(page.errors, []);
+});
+
+test('constellations force high density and lock the others until they are off', () => {
+    const page = densityPage();
+    page.density('low').click();
+    page.constellationToggle().click();
+    page.tick();
+    assert.equal(page.density('high').attributes['aria-pressed'], 'true');
+    assert.deepEqual(['low', 'medium', 'high'].map((d) => !!page.density(d).disabled), [true, true, false]);
+    const sky = page.text();
+    // Neither a click nor an event that reaches the button anyway moves it.
+    page.density('low').click();
+    page.density('medium').dispatch('click');
+    page.tick();
+    assert.equal(page.density('high').attributes['aria-pressed'], 'true');
+    assert.equal(page.text(), sky);
+    // Off again: high stays, and every density answers once more.
+    page.constellationToggle().click();
+    page.tick();
+    assert.equal(page.density('high').attributes['aria-pressed'], 'true');
+    assert.equal(paintedStars(page), expectedStars('high'));
+    assert.deepEqual(['low', 'medium', 'high'].map((d) => !!page.density(d).disabled), [false, false, false]);
+    page.density('low').click();
+    page.tick();
+    assert.equal(paintedStars(page), expectedStars('low'));
+    assert.deepEqual(page.errors, []);
+});
+
+test('star density persists, and saved constellations always load it as high', () => {
+    const values = new Map();
+    const storage = { getItem(k) { return values.get(k); }, setItem(k, v) { values.set(k, v); } };
+    const first = densityPage({ storage });
+    first.density('low').click();
+    const next = densityPage({ storage });
+    assert.equal(next.density('low').attributes['aria-pressed'], 'true');
+    assert.equal(paintedStars(next), expectedStars('low'));
+    // Constellations on and off again leaves high behind, across a reload too.
+    next.constellationToggle().click();
+    next.constellationToggle().click();
+    const after = densityPage({ storage });
+    assert.equal(after.density('high').attributes['aria-pressed'], 'true');
+    assert.equal(after.density('low').disabled, false);
+    // A saved medium beside saved constellations is a state the panel cannot
+    // reach; it loads as high, locked.
+    values.set('ihaveacat.density', 'medium');
+    values.set('ihaveacat.constellations', 'true');
+    const locked = densityPage({ storage });
+    assert.equal(locked.density('high').attributes['aria-pressed'], 'true');
+    assert.equal(locked.density('medium').disabled, true);
+    assert.equal(paintedStars(locked), expectedStars('high'));
+    // Garbage reads as the default.
+    values.set('ihaveacat.density', 'dense');
+    values.set('ihaveacat.constellations', 'false');
+    const garbage = densityPage({ storage });
+    assert.equal(garbage.density('medium').attributes['aria-pressed'], 'true');
+    // Blocked storage never stops the setting working.
+    const blocked = densityPage({ storage: { getItem() { throw Error('blocked'); }, setItem() { throw Error('blocked'); } } });
+    blocked.density('high').click();
+    blocked.tick();
+    assert.equal(paintedStars(blocked), expectedStars('high'));
+    [first, next, after, locked, garbage, blocked].forEach((p) => assert.deepEqual(p.errors, []));
 });

@@ -70,6 +70,7 @@
     var skyView = hasSky ? SkyMap.parseView(currentHash()) : null;
     var skyStars = null;
     var constellationsOn = false;
+    var starDensity = hasSky ? SkyMap.DEFAULT_DENSITY : null;
     var starPositions = [];
     var constellationSVG = null;
     // One entry per figure with at least one drawn edge:
@@ -143,7 +144,11 @@
             lon: skyView.lon,
             azimuth: skyView.azimuth,
             cols: last.cols,
-            constellations: constellationsOn,
+            // The panel already locks the density to high while the figures
+            // are on; the renderer holds the same line on its own, because a
+            // figure drawn without its faint stars has no positions for them
+            // and comes apart.
+            density: constellationsOn ? 'high' : starDensity,
             positions: constellationsOn ? starPositions : null,
             skyRows: Scene.layout(last.cols, last.rows).fenceTop
         });
@@ -629,8 +634,11 @@
      */
     addEventListener(HOVER_EVENT, function (e) {
         var show = !!(e && e.detail && e.detail.constellations);
-        if (show !== constellationsOn) {
+        // An absent density is the default, as an absent toggle is off.
+        var density = (e && e.detail && e.detail.density) || (hasSky ? SkyMap.DEFAULT_DENSITY : null);
+        if (show !== constellationsOn || density !== starDensity) {
             constellationsOn = show;
+            starDensity = density;
             computeStars();
             buildHoverNames();
             redraw();

@@ -299,13 +299,14 @@
 	color: white;
     }
     /*
-     * The settings toggles, mirroring the compass letters exactly: no `color`
-     * of their own (the off state carries .menu-label for the brown, and
-     * .menu-dir-on/.menu-toggle-on below win the marked one back to white),
-     * white-space: pre because a <button> does not inherit it, and the same
-     * vertical-only tap growth.
+     * The settings toggles and density slots, mirroring the compass letters
+     * exactly: no `color` of their own (the off state carries .menu-label for
+     * the brown, and .menu-toggle-on/.menu-density-on below win the marked
+     * one back to white), white-space: pre because a <button> does not
+     * inherit it, and the same vertical-only tap growth — the density slots
+     * are adjacent, exactly like the compass letters.
      */
-    .menu-toggle {
+    .menu-toggle, .menu-density {
 	position: relative;
 	font: inherit;
 	line-height: inherit;
@@ -318,7 +319,7 @@
 	cursor: pointer;
 	transition: color 0.2s ease;
     }
-    .menu-toggle::after {
+    .menu-toggle::after, .menu-density::after {
 	content: "";
 	position: absolute;
 	top: -0.7em;
@@ -326,11 +327,17 @@
 	bottom: -0.7em;
 	left: 0;
     }
-    .menu-toggle:hover, .menu-toggle:focus-visible {
+    .menu-toggle:hover, .menu-toggle:focus-visible,
+    .menu-density:not(:disabled):hover, .menu-density:not(:disabled):focus-visible {
 	color: #F5F3C3;
     }
-    .menu-toggle-on {
+    .menu-toggle-on, .menu-density-on {
 	color: white;
+    }
+    /* Locked by the constellations: still legible, plainly not answering. */
+    .menu-density:disabled {
+	opacity: 0.4;
+	cursor: default;
     }
     /*
      * The hovered star's name. A <span>, not a <div>: the bare `div` rule at
@@ -402,7 +409,7 @@
 	}
 	/* This block only ever killed `animation`; the menu's hover fades are
 	   transitions, which it would otherwise leave running. */
-	.menu-gear, .menu-dir, .menu-step, .menu-toggle {
+	.menu-gear, .menu-dir, .menu-step, .menu-toggle, .menu-density {
 	    transition: none;
 	}
     }

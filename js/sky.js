@@ -342,7 +342,7 @@
     ];
 
     /*
-     * And the stars past that limit which the constellation setting draws. The
+     * And the stars past that limit which the high density draws. The
      * figures reach down to magnitude 6.5, so turning them on used to add
      * hundreds of stars that hovered as nothing at all — visibly there, and
      * nameless.
@@ -589,10 +589,14 @@
     var DEG_PER_COL = 1;
     var DEG_PER_ROW = 2;
 
-    // Display cutoff: calibrated so a typical window lands near the scene's
-    // original ~1.1% star density. Constellation endpoints alone may bypass
-    // this cutoff when that display setting is enabled.
+    // Display cutoffs, one per star density. Medium is the default,
+    // calibrated so a typical window lands near the scene's original ~1.1%
+    // star density; low is sparser; high is medium plus every constellation
+    // endpoint, however faint — what the figures need to be drawn whole.
+    var DENSITIES = ['low', 'medium', 'high'];
+    var DEFAULT_DENSITY = 'medium';
     var SKY_MAG_LIMIT = 3.6;
+    var SKY_LOW_MAG_LIMIT = 3.3;
     // Brightness bins: the three star glyphs of the original art.
     var SKY_BRIGHT_MAG = 2.0;    // and brighter: '*'
     var SKY_MID_MAG = 3.0;       // to here: "'", fainter: '.'
@@ -665,7 +669,7 @@
         var taken = {};
         for (var i = 0; i < CATALOG.length; i += 3) {
             var mag = CATALOG[i + 2];
-            if (!starEnabled(i / 3, !!opts.constellations)) continue;
+            if (!starEnabled(i / 3, opts.density)) continue;
             var p = altAz(CATALOG[i], CATALOG[i + 1], opts.date, opts.lat, opts.lon);
             var d = ((p.az - opts.azimuth + 540) % 360) - 180;   // wrap to +-180
             var x = half + Math.round(d / DEG_PER_COL);
@@ -699,9 +703,13 @@
         return cells;
     }
 
-    function starEnabled(index, enabled) {
+    // Anything but 'low' or 'high' reads as medium: the same garbage-to-
+    // default rule parseView follows.
+    function starEnabled(index, density) {
         var mag = CATALOG[index * 3 + 2];
-        return mag !== undefined && (mag <= SKY_MAG_LIMIT || (enabled && constellationIndexes.has(index)));
+        if (mag === undefined) return false;
+        if (density === 'low') return mag <= SKY_LOW_MAG_LIMIT;
+        return mag <= SKY_MAG_LIMIT || (density === 'high' && constellationIndexes.has(index));
     }
 
     // An edge is drawn when EITHER end is a star on the page. The other may
@@ -857,7 +865,10 @@
         visibleSegments: visibleSegments,
         DEG_PER_COL: DEG_PER_COL,
         DEG_PER_ROW: DEG_PER_ROW,
+        DENSITIES: DENSITIES,
+        DEFAULT_DENSITY: DEFAULT_DENSITY,
         SKY_MAG_LIMIT: SKY_MAG_LIMIT,
+        SKY_LOW_MAG_LIMIT: SKY_LOW_MAG_LIMIT,
         SKY_BRIGHT_MAG: SKY_BRIGHT_MAG,
         SKY_MID_MAG: SKY_MID_MAG,
         DEFAULT_VIEW: DEFAULT_VIEW,

@@ -145,7 +145,7 @@ test('every class the menu can wear is styled in css/style.css', () => {
         // BOTH toggle states: the marked class is only ever emitted by one of
         // them, so building rows one way would let .menu-toggle-on ship
         // unstyled with nothing failing.
-        [{}, { name: true }].forEach((settings) => {
+        [{}, { name: true }, { constellations: true }, { density: 'low' }, { density: 'high' }].forEach((settings) => {
             Menu.rows({ lat: '41.39', lon: '2.17', dir }, settings).forEach((row) => {
                 row.forEach((seg) => {
                     if (seg.cls) seg.cls.split(' ').forEach((c) => used.add(c));
@@ -214,6 +214,8 @@ test('the marked compass letter outranks the label brown by source order', () =>
         'direction loses the cat\'s white');
     assert.ok(css.indexOf('.menu-toggle-on') > css.indexOf('.menu-label'),
         '.menu-toggle-on must be declared after .menu-label for the same reason');
+    assert.ok(css.indexOf('.menu-density-on') > css.indexOf('.menu-label'),
+        '.menu-density-on must be declared after .menu-label for the same reason');
 });
 
 test('the menu box absorbs the buttons\' tap-target overhang', () => {
@@ -230,9 +232,13 @@ test('the menu box absorbs the buttons\' tap-target overhang', () => {
         'the panel must stay scrollable in case it outgrows the window');
     const pad = /padding-bottom:\s*([\d.]+)em/.exec(menu[1]);
     assert.ok(pad, '.menu declares no em-sized bottom padding');
+    // A rule may list several button kinds; each kind needs one overhang.
     const overhangs = [...css.matchAll(
-        /\.menu-(?:dir|toggle)::after\s*\{[^{}]*bottom:\s*-([\d.]+)em/g)];
-    assert.equal(overhangs.length, 2,
+        /((?:\.menu-[\w-]+::after\s*,?\s*)+)\{[^{}]*bottom:\s*-([\d.]+)em/g)]
+        .map((m) => [m[1], m[2]]);
+    const kinds = overhangs.flatMap(([sel]) =>
+        [...sel.matchAll(/\.menu-([\w-]+)::after/g)].map((k) => k[1])).sort();
+    assert.deepEqual(kinds, ['density', 'dir', 'toggle'],
         'expected one ::after overhang per button kind');
     overhangs.forEach((m) => {
         assert.ok(parseFloat(pad[1]) >= parseFloat(m[1]),
