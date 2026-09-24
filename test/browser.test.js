@@ -1481,23 +1481,32 @@ test('a line running behind the moon is not hit where the mask hides it', () => 
     assert.deepEqual(page.errors, []);
 });
 
-test('the highlight is the constellation setting; the name is the name setting', () => {
+test('a figure lights only while names are on, and needs its lines too', () => {
     const page = hoverPage();
     page.setSettings({ names: false, constellations: true });
     const aim = aimAtFigure(figuresFor(page));
     assert.ok(aim);
 
+    // Lines on screen, names off: pointing at one answers nothing at all.
     pointAtPixel(page, aim.x, aim.y);
-    assert.equal(page.byClass('constellation-on').length, 1, 'the highlight needs no name toggle');
-    assert.equal(page.label().hidden, true, 'the name does');
+    assert.equal(page.byClass('constellation-on').length, 0, 'the highlight needs the name toggle');
+    assert.equal(page.label().hidden, true);
 
-    // And the name appears on the setting alone, with no second mousemove.
     page.setSettings({ names: true, constellations: true });
-    page.tick();
-    assert.equal(page.label().hidden, false);
+    pointAtPixel(page, aim.x, aim.y);
+    assert.equal(page.byClass('constellation-on').length, 1);
     assert.equal(page.label().textContent, aim.figure.name);
 
-    // Turning the lines off takes the highlight with them.
+    // Names off again takes the highlight with the label, pointer unmoved.
+    page.setSettings({ names: false, constellations: true });
+    page.tick();
+    assert.equal(page.byClass('constellation-on').length, 0);
+    assert.equal(page.label().hidden, true);
+
+    // And turning the lines off takes it with them.
+    page.setSettings({ names: true, constellations: true });
+    pointAtPixel(page, aim.x, aim.y);
+    assert.equal(page.byClass('constellation-on').length, 1);
     page.setSettings({ names: true, constellations: false });
     page.tick();
     assert.equal(page.byClass('constellation-on').length, 0);

@@ -389,8 +389,8 @@ what you read and what the URL says can never drift apart.
 
 Hovering a star names it — the proper name where the star has one, otherwise
 the Bayer designation spelled out, otherwise the catalogue number. Off by
-default, behind the panel's `name` toggle. With constellations on, hovering a
-line names the figure the same way and lights the whole of it.
+default, behind the panel's `name` toggle. With constellations on too, hovering
+a line names the figure the same way and lights the whole of it.
 
 **The catalogue number appears only where the label is not really a name.**
 `Vega` needs no HD number beside it; `Alpha Lupi` does, because a designation
@@ -448,11 +448,11 @@ rest are a number standing alone.
 - **Both lookups go through `hasOwnProperty`.** A plain `NAMES[index]` answers
   `'constructor'` with a Function and calls it a star, and the index reaches
   `starLabel` from a hovered cell, so a string is not hypothetical.
-- **The name is the naming setting's, the highlight is the constellation
-  setting's.** Hovering a figure writes its name into the same `.star-name`
-  label, gated on the `name` toggle; the lines light up on the constellation
-  setting alone, because they are already on screen and asking twice for the
-  same thing would be asking twice. Where both answer — near the end of a
+- **The `name` toggle is the one switch for anything answering the pointer**
+  — the owner's decision. Hovering a figure lights it and writes its name into
+  the same `.star-name` label only while names are on (and the figures, of
+  course); with names off the lines are scenery and hold still, and a
+  mousemove costs one comparison. Where both answer — near the end of a
   figure — the star wins the label and the figure still lights.
 - Both name tables follow the same rule: proper name, else the Bayer
   designation spelled out, else Flamsteed, else the catalogue number standing

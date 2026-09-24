@@ -554,7 +554,7 @@
     }
 
     function updateHover() {
-        if (!ptrIn || !(charWpx > 0 && lineHpx > 0) || (!hoverOn && !constellationsOn)) {
+        if (!ptrIn || !(charWpx > 0 && lineHpx > 0) || !hoverOn) {
             clearHighlight();
             hideLabel();
             return;
@@ -566,13 +566,12 @@
         var col = Math.floor((ptrX - r.left) / charWpx);
         var row = Math.floor((ptrY - r.top) / lineHpx);
         var inGrid = col >= 0 && col < last.cols && row >= 0 && row < last.rows;
-        var star = inGrid && hoverOn && hoverNames ? hoverNames[col + ':' + row] : null;
+        var star = inGrid && hoverNames ? hoverNames[col + ':' + row] : null;
         /*
-         * The highlight belongs to the constellation setting alone: the lines
-         * are already on screen, and asking for a second setting before they
-         * will answer the pointer would be asking twice for the same thing.
-         * The NAME is the naming setting's, star or figure alike — one switch
-         * for "write down what I am pointing at".
+         * The naming setting is the one switch for "answer what I am
+         * pointing at", star or figure alike — the highlight included, the
+         * owner's decision: with names off, the lines are scenery and hold
+         * still under the pointer.
          */
         var figure = inGrid && constellationsOn ? figureAt(ptrX - r.left, ptrY - r.top) : null;
         if (figure !== hoverFigure) {
@@ -580,7 +579,7 @@
             if (figure) figure.group.setAttribute('class', FIGURE_ON_CLASS);
             hoverFigure = figure;
         }
-        var key = star ? 'star:' + col + ':' + row : (hoverOn && figure ? 'figure:' + figure.figure : null);
+        var key = star ? 'star:' + col + ':' + row : (figure ? 'figure:' + figure.figure : null);
         if (!key) {
             hideLabel();
             return;
@@ -598,9 +597,9 @@
     }
 
     function onMove(e) {
-        // Gated first, so with both features off — the default — a mousemove
-        // costs two comparisons and never reaches the frame clock.
-        if (!hoverOn && !constellationsOn) return;
+        // Gated first, so with names off — the default — a mousemove costs
+        // one comparison and never reaches the frame clock.
+        if (!hoverOn) return;
         // Checked live, like the reduced-motion query. A tap synthesises one
         // mousemove and no mouseleave ever follows it, so without this a
         // touch device would light a label and keep it lit.
@@ -652,7 +651,7 @@
         // Nothing is listening for the pointer any more, so the last position
         // it reported will be stale by the time something is: forget it rather
         // than light up wherever the cursor happened to be left.
-        if (!hoverOn && !constellationsOn) ptrIn = false;
+        if (!hoverOn) ptrIn = false;
         updateHover();
     });
 
