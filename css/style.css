@@ -184,7 +184,9 @@
     .menu {
 	position: fixed;
 	top: 2.6rem;
-	right: 0.5rem;
+	/* A full gutter: a marked '(high)' fills the widest row to its last
+	   cell, and at 0.5rem it sat against the window's edge. */
+	right: 1rem;
 	z-index: 2;
 	margin: 0;
 	padding: 0;
@@ -196,13 +198,17 @@
 	   font size is the case that gets here. */
 	max-height: calc(100vh - 3.5rem);
 	overflow-y: auto;
-	/* The compass and toggle buttons grow their tap targets 0.7em past the
+	/* The panel's buttons grow their tap targets 0.7em past the
 	   line box with absolutely positioned ::afters, and an abs-pos descendant
 	   counts toward a scroll container's scrollable overflow: the last row's
 	   downward overhang hung past the panel's bottom edge and the overflow-y
 	   above answered it with a permanent scrollbar. The padding keeps the
 	   overhang inside the box; it must be at least the ::afters' 0.7em. */
 	padding-bottom: 0.7em;
+	/* The hover label's halo: the gradient's own dark end, so a star or a
+	   constellation line behind the panel never cuts through a value, and
+	   still no box is painted over the sky. */
+	text-shadow: 0 1px 3px #09203f, 0 0 2px #09203f;
     }
     /* Explicit, because `pre` above sets display: inline-block, which would
        otherwise beat the UA stylesheet's [hidden] rule and show a shut panel. */
@@ -240,6 +246,7 @@
 	/* Explicit, because some UA sheets align form controls to the middle,
 	   which would drop the value off the row's baseline. */
 	vertical-align: baseline;
+	text-shadow: inherit;
 	caret-color: #F5F3C3;
     }
     /* A highlight block over exactly those columns, which reads as terminal
@@ -249,13 +256,17 @@
 	background-color: rgba(245, 243, 195, 0.14);
     }
     /*
-     * No `color` here on purpose: the marked letter inherits the panel's
-     * white, and the unmarked ones additionally carry .menu-label, which
-     * supplies the brown. Both are specificity 0,1,0, so a colour on this rule
-     * would win on source order and flatten the two states.
+     * Every panel button — steppers, compass letters, density slots and
+     * checkboxes — is the same object: characters on the grid with the widget
+     * removed. No `color` here on purpose: the marked slot inherits the
+     * panel's white, and the unmarked ones additionally carry .menu-label,
+     * which supplies the brown. Both are specificity 0,1,0, so a colour on
+     * this rule would win on source order and flatten the two states.
      *
      * white-space: pre because a <button> does not reliably inherit it, and
      * ' n ' collapsing to 'n' would shift the row two columns per button.
+     * text-shadow: inherit because the UA sheet resets it on form controls,
+     * which would leave the buttons the only text on the panel without it.
      */
     .menu-step {
         touch-action: none;
@@ -263,11 +274,12 @@
         -webkit-user-select: none;
         -webkit-touch-callout: none;
     }
-    .menu-dir, .menu-step {
+    .menu-dir, .menu-step, .menu-toggle, .menu-density {
 	position: relative;
 	font: inherit;
 	line-height: inherit;
 	white-space: pre;
+	text-shadow: inherit;
 	background: none;
 	border: 0;
 	margin: 0;
@@ -278,10 +290,10 @@
     }
     /*
      * A single line is a thin tap target, so the touch area grows upward and
-     * downward — but NOT sideways. The four letters are adjacent, so a
-     * horizontal overhang would put each one's hit area over its neighbour's,
-     * and the later sibling paints on top: 'w' would quietly swallow taps
-     * meant for 's'. Each slot is already three characters wide.
+     * downward — but NOT sideways. The compass letters and density slots are
+     * adjacent, so a horizontal overhang would put each one's hit area over
+     * its neighbour's, and the later sibling paints on top: 'w' would quietly
+     * swallow taps meant for 's'. Each slot is already three characters wide.
      *
      * The same trap runs vertically: 0.7em reaches past the middle of the
      * next row, where a later button's overhang painted over the earlier
@@ -290,7 +302,7 @@
      * puts every overhang beneath every real box in .menu's stacking
      * context, so it only ever claims space nothing else is drawn in.
      */
-    .menu-dir::after {
+    .menu-dir::after, .menu-step::after, .menu-toggle::after, .menu-density::after {
 	content: "";
 	position: absolute;
 	z-index: -1;
@@ -300,47 +312,20 @@
 	left: 0;
     }
     .menu-dir:hover, .menu-dir:focus-visible,
-    .menu-step:hover, .menu-step:focus-visible {
-	color: #F5F3C3;
-    }
-    .menu-dir-on {
-	color: white;
-    }
-    /*
-     * The settings toggles and density slots, mirroring the compass letters
-     * exactly: no `color` of their own (the off state carries .menu-label for
-     * the brown, and .menu-toggle-on/.menu-density-on below win the marked
-     * one back to white), white-space: pre because a <button> does not
-     * inherit it, and the same vertical-only tap growth — the density slots
-     * are adjacent, exactly like the compass letters.
-     */
-    .menu-toggle, .menu-density {
-	position: relative;
-	font: inherit;
-	line-height: inherit;
-	white-space: pre;
-	background: none;
-	border: 0;
-	margin: 0;
-	padding: 0;
-	vertical-align: baseline;
-	cursor: pointer;
-	transition: color 0.2s ease;
-    }
-    .menu-toggle::after, .menu-density::after {
-	content: "";
-	position: absolute;
-	z-index: -1;
-	top: -0.7em;
-	right: 0;
-	bottom: -0.7em;
-	left: 0;
-    }
+    .menu-step:hover, .menu-step:focus-visible,
     .menu-toggle:hover, .menu-toggle:focus-visible,
     .menu-density:not(:disabled):hover, .menu-density:not(:disabled):focus-visible {
 	color: #F5F3C3;
     }
-    .menu-toggle-on, .menu-density-on {
+    /* The keyboard cursor is the field's own highlight block, so every
+       control on the panel shows focus the same way: as a selected run of
+       cells, never as a ring drawn around characters. */
+    .menu-dir:focus-visible, .menu-step:focus-visible,
+    .menu-toggle:focus-visible, .menu-density:focus-visible {
+	outline: none;
+	background-color: rgba(245, 243, 195, 0.14);
+    }
+    .menu-dir-on, .menu-toggle-on, .menu-density-on {
 	color: white;
     }
     /* Locked by the constellations: still legible, plainly not answering. */
@@ -353,6 +338,9 @@
        answers nothing has no business growing its target. */
     .menu-density:disabled::after {
 	content: none;
+    }
+    .menu ::selection {
+	background-color: rgba(245, 243, 195, 0.25);
     }
     /*
      * The hovered star's name. A <span>, not a <div>: the bare `div` rule at

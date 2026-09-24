@@ -72,8 +72,8 @@ All of the above are enforced by tests.
   the first paint, the static fallback is left alone. It also owns the
   hover-to-name lookup and its floating label (see **Star names** below).
 - `js/menu.js` — the settings panel: a gear in the top-right that opens a small
-  ASCII readout for latitude, longitude, facing direction, the constellations
-  and star-names toggles, and the star density. Split like the
+  ASCII readout for latitude, longitude, facing direction, the star density,
+  and the constellations and names checkboxes. Split like the
   rest: `rows(fields, settings)` is **pure** art over pre-formatted strings, in the same
   `{text, cls}` shape `scene.js` emits (so `test/menu.test.js` pins the drawing
   with no DOM at all); `install()` is the wiring. It writes the URL fragment and
@@ -292,8 +292,29 @@ what you read and what the URL says can never drift apart.
 - The gear is U+2699 **plus U+FE0E**. Without the variation selector, iOS and
   Android draw a full-colour emoji cog — the one thing on this page that could
   look less like the rest of the drawing.
+- **The panel is ASCII only** (the gear, outside it, is the one exception
+  above) and is drawn as one ruled column — no title, two blocks split by a
+  blank line, where you stand above and what the sky shows below:
+
+  ```
+   lat   - [  41.39 ] +
+   lon   - [   2.17 ] +
+   dir   n  e (s) w
+
+   stars low (medium) high
+   show [ ] constellations
+        [ ] names
+  ```
+
+  Every label is padded to `LABEL_COLS` (6, ` stars`), so each control
+  starts in the same cell. On/off is a checkbox (`[x]`), pick-one is a radio
+  mark (`(s)`), and the brackets carry the state with no colour at all. Every
+  button is at least three cells wide — a stepper is ` - `/` + ` with its
+  spaces, a checkbox includes its word, as a `<label>` would — because a
+  one-cell button was a ten-pixel target on a phone. Keyboard focus is the
+  field's highlight block on every control, never a ring round characters.
 - Every direction slot is three cells (`(s)` marked, ` s ` not), so clicking one
-  cannot shift the row, and the brackets carry the state with no colour at all.
+  cannot shift the row.
 - **A tap-target overhang never covers another control.** The buttons grow
   their targets 0.7em up and down with `::after`s, which reaches past the
   middle of the next row, and a later button paints over an earlier one: the
@@ -310,7 +331,7 @@ what you read and what the URL says can never drift apart.
   with names. Names persist in `ihaveacat.names`, and the formatted vantage
   in `ihaveacat.view`. A nonempty URL fragment takes precedence over the saved
   vantage; storage failures never prevent changing settings.
-- The **star density** row (`star  low (medium) high`) sits directly under
+- The **star density** row (`stars low (medium) high`) sits directly above
   constellations, marked like the compass so marking a slot shifts nothing.
   It persists in `ihaveacat.density` and travels in `settingschange` as
   `density`; an absent or unknown value is medium. **Constellations on forces
@@ -322,7 +343,7 @@ what you read and what the URL says can never drift apart.
   `main.js` renders high whenever the figures are on, because a figure
   without its faint endpoints has no positions for them and comes apart. A
   saved constellations-on beside any other saved density loads as high.
-- Coordinate rows use `lat ▼ [number] ▲` (and `lon`). Each arrow steps by 1°
+- Coordinate rows use `lat - [number] +` (and `lon`). Each stepper steps by 1°
   and clamps at ±90° latitude or ±180° longitude; typed invalid values are
   still rejected.
   Holding an arrow steps immediately, waits 500 ms, then repeats with intervals
@@ -376,7 +397,7 @@ what you read and what the URL says can never drift apart.
   the pointer's distance to them. A highlight cannot outlive a repaint, which
   discards the `<g>` nodes, so `paintConstellations` puts it back and drops the
   label's identity key before rebuilding.
-- The star-names toggle is **persistent locally and deliberately not in the
+- The names toggle is **persistent locally and deliberately not in the
   fragment**. The fragment is a shareable description of *what is drawn*; a
   display preference is neither shareable nor a property of the sky. Having no
   address bar to travel through, it is announced as a `CustomEvent` on
@@ -389,7 +410,8 @@ what you read and what the URL says can never drift apart.
 
 Hovering a star names it — the proper name where the star has one, otherwise
 the Bayer designation spelled out, otherwise the catalogue number. Off by
-default, behind the panel's `name` toggle. With constellations on too, hovering
+default, behind the panel's `names` checkbox — named for both, not
+`star names`, because it names figures too. With constellations on too, hovering
 a line names the figure the same way and lights the whole of it.
 
 **The catalogue number appears only where the label is not really a name.**
@@ -448,7 +470,7 @@ rest are a number standing alone.
 - **Both lookups go through `hasOwnProperty`.** A plain `NAMES[index]` answers
   `'constructor'` with a Function and calls it a star, and the index reaches
   `starLabel` from a hovered cell, so a string is not hypothetical.
-- **The `name` toggle is the one switch for anything answering the pointer**
+- **The `names` checkbox is the one switch for anything answering the pointer**
   — the owner's decision. Hovering a figure lights it and writes its name into
   the same `.star-name` label only while names are on (and the figures, of
   course); with names off the lines are scenery and hold still, and a

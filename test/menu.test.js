@@ -22,16 +22,23 @@ function dirRow(fields) {
 
 test('the panel is drawn exactly as designed', () => {
     assert.deepEqual(textOf(BCN), [
-        '     settings',
-        '',
-        ' lat ▼ [  41.39 ] ▲',
-        ' lon ▼ [   2.17 ] ▲',
+        ' lat   - [  41.39 ] + ',
+        ' lon   - [   2.17 ] + ',
         ' dir   n  e (s) w ',
         '',
-        ' constellations ( )',
-        ' star  low (medium) high ',
-        ' name ( )'
+        ' stars low (medium) high ',
+        ' show [ ] constellations',
+        '      [ ] names'
     ]);
+});
+
+test('every mark the panel draws is ASCII', () => {
+    // The steppers were U+25BC/U+25B2 once. Every mark the panel draws is
+    // now a character any terminal has; the gear, outside rows(), is the one
+    // exception and is pinned below.
+    const settings = [{}, { name: true, constellations: true }, { density: 'low' }];
+    settings.forEach((s) => textOf({ lat: '-89.99', lon: '-179.99', dir: 'w' }, s)
+        .forEach((row) => assert.match(row, /^[\x20-\x7e]*$/, JSON.stringify(row))));
 });
 
 test('a toggle is off unless the panel is asked for it', () => {
@@ -39,8 +46,9 @@ test('a toggle is off unless the panel is asked for it', () => {
     // structural, rather than a value someone has to remember to pass.
     assert.deepEqual(Menu.rows(BCN), Menu.rows(BCN, undefined));
     assert.deepEqual(Menu.rows(BCN), Menu.rows(BCN, {}));
-    assert.equal(textOf(BCN).pop(), ' name ( )');
-    assert.equal(textOf(BCN, { name: true }).pop(), ' name (x)');
+    assert.equal(textOf(BCN).pop(), '      [ ] names');
+    assert.equal(textOf(BCN, { name: true }).pop(), '      [x] names');
+    assert.equal(textOf(BCN, { constellations: true }).slice(-2)[0], ' show [x] constellations');
 });
 
 test('marking a toggle shifts nothing and needs no colour', () => {
@@ -54,16 +62,41 @@ test('marking a toggle shifts nothing and needs no colour', () => {
     assert.match(off[1].cls, /\bmenu-label\b/);
 });
 
-test('the toggle keeps the panel label column', () => {
-    // ' name ' is six cells, so the mark starts where '[' and the first
-    // compass slot do.
+test('a switch is a checkbox and a pick is a radio mark', () => {
+    // [x] for on/off, (s) for one-of-several: the two conventions every text
+    // UI already uses, so the panel needs no legend.
+    const rows = Menu.rows(BCN, { name: true });
+    rows.flat().filter((s) => s.toggle).forEach((s) => assert.match(s.text, /^\[[x ]\] \w+$/));
+    rows.flat().filter((s) => s.dir || s.density).forEach((s) => assert.doesNotMatch(s.text, /[[\]]/));
+});
+
+test('every control starts in the one column after the labels', () => {
+    // ' stars' is the longest label, so the stepper, the first compass slot,
+    // the first density slot and both checkboxes all begin in the cell after
+    // it — the panel reads as one ruled column.
     const text = textOf(BCN);
-    const [lat, dir, stars, name] = [text[2], text[4], text[7], text[8]];
-    assert.equal(lat.indexOf('▼'), 5);
-    assert.equal(lat.indexOf('['), 7);
-    assert.equal(dir.indexOf(' n '), 6);
-    assert.equal(stars.indexOf(' low '), 6);
-    assert.equal(name.indexOf('( )'), 6);
+    const [lat, lon, dir, stars, show, names] = [text[0], text[1], text[2], text[4], text[5], text[6]];
+    const col = Menu.LABEL_COLS;
+    assert.equal(col, ' stars'.length);
+    [lat, lon].forEach((row) => assert.equal(row.indexOf(' - '), col));
+    assert.equal(dir.indexOf(' n '), col);
+    assert.equal(stars.indexOf(' low '), col);
+    assert.equal(show.indexOf('[ ]'), col);
+    assert.equal(names.indexOf('[ ]'), col);
+    // Every label cell is a label, never a control.
+    Menu.rows(BCN).filter((row) => row.length).forEach((row) => {
+        assert.equal(row[0].cls, 'menu-label');
+        assert.equal(row[0].text.length, col);
+    });
+});
+
+test('the steppers are three cells wide', () => {
+    // A one-cell button is ten pixels wide on a phone. The spaces either side
+    // are part of the button, as they are in a compass slot.
+    Menu.rows(BCN).flat().filter((s) => s.stepField).forEach((s) => {
+        assert.equal(s.text.length, 3);
+        assert.equal(s.text.trim(), s.delta < 0 ? '-' : '+');
+    });
 });
 
 // The density row, found by what it holds, like the compass row.
@@ -121,7 +154,7 @@ test('constellations mark high and disable the other densities', () => {
 });
 
 test('the brackets hold the same columns on both value rows', () => {
-    const [latRow, lonRow] = textOf(BCN).slice(2, 4);
+    const [latRow, lonRow] = textOf(BCN).slice(0, 2);
     assert.equal(latRow.indexOf('['), lonRow.indexOf('['));
     assert.equal(latRow.indexOf(']'), lonRow.indexOf(']'));
     // The gap between them is the field plus the one space before ']'.
@@ -135,10 +168,10 @@ test('the longest value a fragment can hold still fits between the brackets', ()
         assert.ok(v.length <= Menu.FIELD_COLS, v);
     });
     const rows = textOf({ lat: '-89.99', lon: '-179.99', dir: 'w' });
-    assert.equal(rows[2], ' lat ▼ [ -89.99 ] ▲');
-    assert.equal(rows[3], ' lon ▼ [-179.99 ] ▲');
+    assert.equal(rows[0], ' lat   - [ -89.99 ] + ');
+    assert.equal(rows[1], ' lon   - [-179.99 ] + ');
     // Every value row is the same width whatever the value.
-    assert.equal(rows[2].length, textOf(BCN)[2].length);
+    assert.equal(rows[0].length, textOf(BCN)[0].length);
 });
 
 test('the compass marks the way you face, and only that way', () => {

@@ -426,8 +426,8 @@ function loadPage(options) {
         gear() { return this.byClass('menu-gear')[0]; },
         panel() { return this.byClass('menu')[0]; },
         label() { return this.byClass('star-name')[0]; },
-        toggle() { return this.byClass('menu-toggle').find(b => b.attributes['aria-label'] === 'star names'); },
-        constellationToggle() { return this.byClass('menu-toggle').find(b => b.attributes['aria-label'] === 'Constellations'); },
+        toggle() { return this.byClass('menu-toggle').find(b => b.attributes['aria-label'] === 'star and constellation names'); },
+        constellationToggle() { return this.byClass('menu-toggle').find(b => b.attributes['aria-label'] === 'constellations'); },
         density(d) { return this.byClass('menu-density').find(b => b.attributes['aria-label'] === d + ' star density'); },
         orientation() { win.dispatchEvent(new win.CustomEvent('orientationchange')); },
         rect() { return pre.getBoundingClientRect(); },
@@ -1047,7 +1047,7 @@ test('star names are off until they are asked for', () => {
 
     // And the panel agrees.
     page.gear().click();
-    assert.equal(page.toggle().textContent, '( )');
+    assert.equal(page.toggle().textContent, '[ ] names');
     assert.deepEqual(page.errors, []);
 });
 
@@ -1161,11 +1161,11 @@ test('the panel toggle drives the names, and writes no fragment', () => {
     const page = hoverPage();
     const hash = page.hash();
     page.gear().click();
-    assert.equal(page.toggle().textContent, '( )');
+    assert.equal(page.toggle().textContent, '[ ] names');
 
     page.toggle().click();
     page.tick();
-    assert.equal(page.toggle().textContent, '(x)', 'the mark did not move');
+    assert.equal(page.toggle().textContent, '[x] names', 'the mark did not move');
     const s = skyFor().shown[0];
     page.hover(s.x, s.y);
     page.tick();
@@ -1173,7 +1173,7 @@ test('the panel toggle drives the names, and writes no fragment', () => {
 
     page.toggle().click();
     page.tick();
-    assert.equal(page.toggle().textContent, '( )');
+    assert.equal(page.toggle().textContent, '[ ] names');
     assert.equal(page.label().hidden, true);
     assert.equal(page.hash(), hash, 'the toggle wrote to the URL');
     assert.deepEqual(page.errors, []);

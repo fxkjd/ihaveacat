@@ -219,7 +219,7 @@ test('the marked compass letter outranks the label brown by source order', () =>
 });
 
 test('the menu box absorbs the buttons\' tap-target overhang', () => {
-    // The compass and toggle ::afters grow the touch targets past the line
+    // The panel buttons' ::afters grow the touch targets past the line
     // box, absolutely positioned inside the panel — and an abs-pos descendant
     // counts toward a scroll container's scrollable overflow. .menu is one
     // (overflow-y: auto is the too-tall-panel escape hatch), so unless the
@@ -238,7 +238,7 @@ test('the menu box absorbs the buttons\' tap-target overhang', () => {
         .map((m) => [m[1], m[2]]);
     const kinds = overhangs.flatMap(([sel]) =>
         [...sel.matchAll(/\.menu-([\w-]+)::after/g)].map((k) => k[1])).sort();
-    assert.deepEqual(kinds, ['density', 'dir', 'toggle'],
+    assert.deepEqual(kinds, ['density', 'dir', 'step', 'toggle'],
         'expected one ::after overhang per button kind');
     overhangs.forEach((m) => {
         assert.ok(parseFloat(pad[1]) >= parseFloat(m[1]),

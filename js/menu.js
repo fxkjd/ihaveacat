@@ -20,9 +20,20 @@
     // '-179.99' is the longest value a fragment can hold, so a field is never
     // wider than its brackets and the value can never overflow them.
     var FIELD_COLS = 7;
+    // ' stars', the longest label plus its leading space. Every control
+    // starts in the column after it, so the panel reads as one ruled column:
+    // the '-', the first compass letter, 'low' and the checkbox's mark all
+    // sit in the same cell.
+    var LABEL_COLS = 6;
     var FIELDS = ['lat', 'lon'];
     var ROSE = ['n', 'e', 's', 'w'];
+    // Top to bottom as the sky is built: the lines join the stars, and the
+    // names answer the pointer over either.
     var TOGGLES = ['constellations', 'name'];
+    // What each switch is called on the panel. 'names' and not 'star names':
+    // with the figures on, the same switch names a hovered constellation too.
+    var TOGGLE_WORDS = { constellations: 'constellations', name: 'names' };
+    var TOGGLE_ARIA = { constellations: 'constellations', name: 'star and constellation names' };
     // Must match SkyMap.DENSITIES (a test pins the two together). Copied, not
     // read, because rows() stands alone with no sky module loaded.
     var DENSITIES = ['low', 'medium', 'high'];
@@ -31,7 +42,12 @@
     var VIEW_KEY = 'ihaveacat.view';
     var NAMES_KEY = 'ihaveacat.names';
     var DENSITY_KEY = 'ihaveacat.density';
-    var TOGGLE_ON = '(x)', TOGGLE_OFF = '( )';
+    // A checkbox for on/off, a radio mark '(s)' for pick-one: the two
+    // conventions every text UI already uses, so the panel explains itself.
+    var TOGGLE_ON = '[x]', TOGGLE_OFF = '[ ]';
+    // Three cells each, the space either side included, like a compass slot:
+    // a single-cell button was a ten-pixel tap target on a phone.
+    var STEP_DOWN = ' - ', STEP_UP = ' + ';
     var TITLE = 'settings';
     var GEAR = '⚙︎';
     // Must match js/main.js. Duplicated rather than shared because main.js
@@ -41,6 +57,8 @@
 
     function rep(ch, n) { return n > 0 ? new Array(n + 1).join(ch) : ''; }
     function label(text) { return { text: text, cls: 'menu-label' }; }
+    // A row's label, padded out to the control column.
+    function lead(text) { return label(' ' + text + rep(' ', LABEL_COLS - 1 - text.length)); }
     function densityOf(d) { return DENSITIES.indexOf(d) >= 0 ? d : DEFAULT_DENSITY; }
 
     /*
@@ -53,7 +71,7 @@
     function densityRow(s) {
         var locked = !!s.constellations;
         var current = locked ? 'high' : densityOf(s.density);
-        return [label(' star ')].concat(DENSITIES.map(function (d) {
+        return [lead('stars')].concat(DENSITIES.map(function (d) {
             var on = d === current;
             return {
                 density: d,
@@ -72,28 +90,30 @@
      * Every direction slot is three cells wide, marked '(s)' or ' s ', so
      * clicking one can never shift the row by a column and the state survives
      * with the colours stripped out.
+     *
+     * No title: the gear already says what this is, and two blocks separated
+     * by one blank line need no heading — where you stand above, what the
+     * sky shows below.
      */
     function rows(fields, settings) {
         var f = fields || {};
         var out = [];
-        out.push([label(rep(' ', 5) + TITLE)]);
-        out.push([]);
         FIELDS.forEach(function (name) {
             out.push([
-                label(' ' + name + ' '),
-                { stepField: name, delta: -1, text: '▼', cls: 'menu-step menu-label' },
-                label(' ['),
+                lead(name),
+                { stepField: name, delta: -1, text: STEP_DOWN, cls: 'menu-step menu-label' },
+                label('['),
                 {
                     field: name,
                     value: String(f[name] === undefined ? '' : f[name]),
                     cols: FIELD_COLS,
                     cls: 'menu-field'
                 },
-                label(' ] '),
-                { stepField: name, delta: 1, text: '▲', cls: 'menu-step menu-label' }
+                label(' ]'),
+                { stepField: name, delta: 1, text: STEP_UP, cls: 'menu-step menu-label' }
             ]);
         });
-        out.push([label(' dir  ')].concat(ROSE.map(function (d) {
+        out.push([lead('dir')].concat(ROSE.map(function (d) {
             var on = d === f.dir;
             // The unmarked letters carry menu-label too, so they take the same
             // brown as the labels; menu-dir-on is declared after it and wins
@@ -114,22 +134,24 @@
          */
         var s = settings || {};
         out.push([]);
-        TOGGLES.forEach(function (name) {
+        // Directly above the switch that can lock it, so a locked row and
+        // the reason for it are never apart.
+        out.push(densityRow(s));
+        TOGGLES.forEach(function (name, i) {
             var lit = !!s[name];
             out.push([
-                label(' ' + name + rep(' ', Math.max(1, 5 - name.length))),
+                // One label for the pair: the boxes line up beneath it.
+                lead(i ? '' : 'show'),
                 {
                     toggle: name,
-                    // Three cells either way, like a compass slot: the mark
-                    // cannot shift the row, and it carries the state with no
-                    // colour at all.
-                    text: lit ? TOGGLE_ON : TOGGLE_OFF,
+                    // The word is part of the button, as a checkbox's label
+                    // is: the whole line is the target. The mark is three
+                    // cells either way, so it cannot shift the row, and it
+                    // carries the state with no colour at all.
+                    text: (lit ? TOGGLE_ON : TOGGLE_OFF) + ' ' + TOGGLE_WORDS[name],
                     cls: lit ? 'menu-toggle menu-toggle-on' : 'menu-toggle menu-label'
                 }
             ]);
-            // Directly below the switch that can lock it, so the dependency
-            // reads top to bottom.
-            if (name === 'constellations') out.push(densityRow(s));
         });
         return out;
     }
@@ -362,7 +384,7 @@
                 el.inputMode = 'decimal';
                 el.autocomplete = 'off';
                 el.spellcheck = false;
-                // The ' lat  [' text is a sibling span, not a <label>, so the
+                // The ' lat   - [' text is a sibling span, not a <label>, so the
                 // input needs its own name — spelled out, like 'look n' is.
                 el.setAttribute('aria-label',
                     seg.field === 'lat' ? 'latitude' : 'longitude');
@@ -408,7 +430,9 @@
                 el = doc.createElement('button');
                 el.type = 'button';
                 el.textContent = seg.text;
-                el.setAttribute('aria-label', seg.toggle === 'name' ? 'star names' : 'Constellations');
+                // The mark would be read out as punctuation; aria-pressed
+                // carries it, and the name keeps the visible word in it.
+                el.setAttribute('aria-label', TOGGLE_ARIA[seg.toggle]);
                 el.addEventListener('click', function () { setToggle(seg.toggle); });
                 el.addEventListener('keydown', onButtonKey);
                 toggles[seg.toggle] = el;
@@ -507,6 +531,7 @@
 
     var Menu = {
         FIELD_COLS: FIELD_COLS,
+        LABEL_COLS: LABEL_COLS,
         FIELDS: FIELDS,
         ROSE: ROSE,
         TOGGLES: TOGGLES,
