@@ -237,6 +237,17 @@ function element(tag, doc) {
             this.firstChild = this.children[0] || null;
             return child;
         },
+        // With a fragment's children moved in, as appendChild does; a null
+        // reference appends, as in a real DOM.
+        insertBefore(child, ref) {
+            if (!ref) return this.appendChild(child);
+            const moved = child.tagName === '#fragment' ? child.children.splice(0) : [child];
+            if (child.tagName === '#fragment') child.firstChild = null;
+            this.children.splice(this.children.indexOf(ref), 0, ...moved);
+            moved.forEach((c) => { c.parentNode = this; });
+            this.firstChild = this.children[0] || null;
+            return child;
+        },
         // main.js measures a run of Ms to derive the character width; 0.6 em is
         // what a real monospace face gives. A test can pin a full box by
         // assigning `rect` — the hover label's width, for instance, which

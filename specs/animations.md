@@ -23,6 +23,12 @@ head and `fireflies` as plain inputs and stays pure.
 **`buildScene` with no animation options renders exactly the resting page**, so
 the feature cannot drift the static scene.
 
+**A frame patches each changed row rather than refilling it**: `applyScene`
+keeps the runs that match at either end and replaces only those between. A
+replaced `<span>` restarts its CSS twinkle, so a refilled row made every star
+on it blink whenever a meteor crossed it. A full `paint()` still builds every
+row.
+
 ## Tail
 
 - The tail is blitted **in front of** the fence and vines and erases what it

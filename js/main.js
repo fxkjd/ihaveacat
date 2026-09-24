@@ -266,6 +266,7 @@
 
     var rowEls = [];      // one <span> per grid row, so frames can update rows alone
     var rowKeys = [];     // serialised runs per row, to spot which rows changed
+    var rowRuns = [];     // the runs each row was last drawn from, one node each
 
     function rowKey(runs) {
         var key = '';
@@ -275,18 +276,39 @@
         return key;
     }
 
+    function runNode(run) {
+        if (!run.cls) return document.createTextNode(run.text);
+        var span = document.createElement('span');
+        span.className = run.cls;
+        span.textContent = run.text;
+        return span;
+    }
+
     function fillRow(el, runs) {
         while (el.firstChild) el.removeChild(el.firstChild);
-        runs.forEach(function (run) {
-            if (run.cls) {
-                var span = document.createElement('span');
-                span.className = run.cls;
-                span.textContent = run.text;
-                el.appendChild(span);
-            } else {
-                el.appendChild(document.createTextNode(run.text));
-            }
-        });
+        runs.forEach(function (run) { el.appendChild(runNode(run)); });
+    }
+
+    function sameRun(a, b) {
+        return a.cls === b.cls && a.text === b.text;
+    }
+
+    /*
+     * Replace only the runs that changed, keeping the nodes on either side.
+     * A replaced <span> starts its twinkle over, so refilling the whole row
+     * made every star on it blink whenever a meteor crossed it.
+     */
+    function patchRow(i, runs) {
+        var el = rowEls[i], old = rowRuns[i];
+        var head = 0, tail = 0;
+        while (head < old.length && head < runs.length && sameRun(old[head], runs[head])) head++;
+        while (tail < old.length - head && tail < runs.length - head &&
+            sameRun(old[old.length - 1 - tail], runs[runs.length - 1 - tail])) tail++;
+        for (var k = old.length - head - tail; k > 0; k--) el.removeChild(el.childNodes[head]);
+        var frag = document.createDocumentFragment();
+        for (var j = head; j < runs.length - tail; j++) frag.appendChild(runNode(runs[j]));
+        el.insertBefore(frag, el.childNodes[head] || null);
+        rowRuns[i] = runs;
     }
 
     // Full rebuild. Rows are wrapped in their own inline <span> — invisible
@@ -296,6 +318,7 @@
         var frag = document.createDocumentFragment();
         rowEls = [];
         rowKeys = [];
+        rowRuns = [];
         scene.grid.forEach(function (runs, i) {
             var rowEl = document.createElement('span');
             fillRow(rowEl, runs);
@@ -303,6 +326,7 @@
             if (i < scene.grid.length - 1) frag.appendChild(document.createTextNode('\n'));
             rowEls.push(rowEl);
             rowKeys.push(rowKey(runs));
+            rowRuns.push(runs);
         });
         while (pre.firstChild) pre.removeChild(pre.firstChild);
         pre.appendChild(frag);
@@ -318,7 +342,7 @@
             var key = rowKey(runs);
             if (key === rowKeys[i]) return;
             rowKeys[i] = key;
-            fillRow(rowEls[i], runs);
+            patchRow(i, runs);
         });
     }
 
