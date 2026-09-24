@@ -31,7 +31,7 @@
     // names answer the pointer over either.
     var TOGGLES = ['constellations', 'name'];
     // What each switch is called on the panel. 'names' and not 'star names':
-    // with the figures on, the same switch names a hovered constellation too.
+    // with the figures on, the same switch names a pointed-at constellation too.
     var TOGGLE_WORDS = { constellations: 'constellations', name: 'names' };
     var TOGGLE_ARIA = { constellations: 'constellations', name: 'star and constellation names' };
     // Must match SkyMap.DENSITIES (a test pins the two together). Copied, not

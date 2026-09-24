@@ -167,8 +167,17 @@ test('the hover label is styled, and can be hidden', () => {
         '.star-name must declare its own [hidden] rule — it sets no display, ' +
         'and a bare [hidden] is only a UA rule');
     assert.match(css, /pointer-events:\s*none/,
-        'the label must not be a hit target, or it swallows the mousemove ' +
+        'the label must not be a hit target, or it swallows the pointer move ' +
         'that positions it and flickers itself away');
+});
+
+test('a tap on the scene does not flash it', () => {
+    // main.js listens for clicks on the <pre> so a tap can name a star, and
+    // iOS answers any element that does with a grey box over all of it.
+    const rule = /#scene\s*\{([^}]*)\}/.exec(readFile('css/style.css'));
+    assert.ok(rule, '#scene is never styled');
+    assert.match(rule[1], /-webkit-tap-highlight-color:\s*transparent/,
+        '#scene must turn off the tap highlight');
 });
 
 test('main.js and menu.js agree on the settings event name', () => {

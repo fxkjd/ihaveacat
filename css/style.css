@@ -48,7 +48,15 @@
 	font-feature-settings: "liga" 0, "clig" 0, "calt" 0;
 	font-kerning: none;
     }
-    #scene { position: relative; z-index: 1; }
+    /*
+     * main.js listens for taps on the scene, to name a star, and iOS answers
+     * any element that does with a grey flash over its whole box.
+     */
+    #scene {
+	position: relative;
+	z-index: 1;
+	-webkit-tap-highlight-color: transparent;
+    }
     .constellations {
         position: fixed;
         z-index: 0;
@@ -357,7 +365,7 @@
 	position: fixed;
 	z-index: 3;
 	/* Never a hit target. A label that could take the pointer would swallow
-	   the very mousemove that positions it and flicker itself away. */
+	   the very pointer move that positions it and flicker itself away. */
 	pointer-events: none;
 	white-space: nowrap;
 	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace;

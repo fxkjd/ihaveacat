@@ -54,8 +54,9 @@ and update it in the same change when a rule moves.
 - [Settings panel](specs/settings-panel.md) — the gear menu, the URL fragment,
   persisted display settings.
 - [Constellations](specs/constellations.md) — figure lines, masking, figure
-  hover.
-- [Star names](specs/star-names.md) — the hover-to-name lookup and its label.
+  hover and tap.
+- [Star names](specs/star-names.md) — the hover- and tap-to-name lookup and its
+  label.
 - [Testing](specs/testing.md) — what each suite pins, the browser harness and
   its traps.
 
@@ -83,8 +84,8 @@ tests).
   into `<pre id="scene">` with `createElement`/`textContent` (never
   `innerHTML`), one `<span>` per row so a frame repaints only the rows that
   changed. Owns **all scene animation timing and randomness**, the
-  constellation overlay and the star-name hover. If anything fails before the
-  first paint, the static fallback is left alone.
+  constellation overlay and the star-name hover and tap. If anything fails
+  before the first paint, the static fallback is left alone.
 - `js/menu.js` — the settings panel. `rows(fields, settings)` is **pure** art in
   `scene.js`'s `{text, cls}` shape; `install()` is the wiring. It reaches
   `main.js` only through channels the browser owns — the URL fragment and a

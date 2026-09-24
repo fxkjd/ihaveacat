@@ -44,7 +44,7 @@ function glyphMetrics(glyph, fontSize) {
 
 test('constellations align on resize and orientation, mask foreground, and restore the disabled scene', () => {
     const now = '2026-01-15T22:00:00Z';
-    const page = loadPage({ now, reducedMotion: true, hover: false });
+    const page = loadPage({ now, reducedMotion: true });
     const baseline = page.pre.children.map(r => JSON.stringify(r.children?.map(c => [c.textContent, c.className, c.nodeValue])));
     assert.equal(page.byClass('constellations').length, 0);
     page.constellationToggle().click();
@@ -267,11 +267,11 @@ function loadPage(options) {
     const listeners = {};           // window event listeners, by type
     // The reduced-motion media query, stateful so a test can flip it live.
     const media = { matches: !!opts.reducedMotion, handlers: [] };
-    // A pointer that can hover, i.e. a mouse. Separate from the one above:
-    // a stub that ignored matchMedia's argument would answer BOTH queries with
-    // the reduced-motion state, silently disabling hover in every ordinary
-    // test and enabling it only for a reduced-motion user.
-    const hoverMedia = { matches: opts.hover !== false, handlers: [] };
+    // Every other query answers no. Separate from the one above: a stub that
+    // ignored matchMedia's argument once answered (hover: hover) with the
+    // reduced-motion state, silently disabling hover in every ordinary test
+    // and enabling it only for a reduced-motion user.
+    const otherMedia = { matches: false, handlers: [] };
 
     let hash = opts.hash || '';
     let hashChanges = 0;
@@ -317,7 +317,7 @@ function loadPage(options) {
             return true;
         },
         matchMedia(query) {
-            const m = /prefers-reduced-motion/.test(String(query)) ? media : hoverMedia;
+            const m = /prefers-reduced-motion/.test(String(query)) ? media : otherMedia;
             return {
                 get matches() { return m.matches; },
                 addEventListener(type, fn) { if (type === 'change') m.handlers.push(fn); }
@@ -442,8 +442,41 @@ function loadPage(options) {
                 clientY: r.top + (row + (fy === undefined ? 0.5 : fy)) * lineH
             };
         },
-        hover(col, row, fx, fy) { pre.dispatch('mousemove', this.pointAt(col, row, fx, fy)); },
-        leave() { pre.dispatch('mouseleave', {}); },
+        // Pointer events, as main.js listens for them: pointerType is how it
+        // tells a mouse that hovers from a finger that taps.
+        move(point, type) { pre.dispatch('pointermove', Object.assign({ pointerType: type || 'mouse' }, point)); },
+        hover(col, row, fx, fy) { this.move(this.pointAt(col, row, fx, fy)); },
+        leave(type) { pre.dispatch('pointerleave', { pointerType: type || 'mouse' }); },
+        /*
+         * A tap as a browser delivers it, on `target` (the <pre> unless
+         * given): the pointer events, then the compatibility mouse events,
+         * then the click — which carries no pointerType, as in Safari. The
+         * pointer events and the click reach the window, where main.js hears
+         * them, since the stub does not bubble. A finger leaves the scene on
+         * every lift, before the click; and the mousemove is the one that,
+         * answered, used to light a label no mouseleave ever put out.
+         */
+        tapAt(point, target) {
+            const on = target || pre;
+            const send = (type, extra) => win.dispatchEvent(Object.assign({ type, target: on }, point, extra));
+            send('pointerdown', { pointerType: 'touch', pointerId: 3 });
+            send('pointerup', { pointerType: 'touch', pointerId: 3 });
+            if (on === pre) {
+                pre.dispatch('pointerleave', { pointerType: 'touch' });
+                pre.dispatch('mousemove', point);
+            }
+            send('click');
+        },
+        tap(col, row, fx, fy) { this.tapAt(this.pointAt(col, row, fx, fy)); },
+        // A mouse click, for proving it is not taken for a tap.
+        clickAt(point) {
+            const send = (type, extra) => win.dispatchEvent(Object.assign({ type, target: pre }, point, extra));
+            this.move(point);
+            send('pointerdown', { pointerType: 'mouse', pointerId: 1 });
+            send('pointerup', { pointerType: 'mouse', pointerId: 1 });
+            send('click');
+        },
+        body() { return win.document.body; },
         // Announce the session-only setting the way the menu does, so a test
         // can drive the feature with no panel open.
         setNames(on) {
@@ -1208,15 +1241,289 @@ test('star names survive the reduced-motion flip', () => {
     assert.equal(page.label().hidden, false);
 });
 
-test('a pointer that cannot hover never names anything', () => {
-    const page = hoverPage({ hover: false });
+test('only a mouse hovers: a sliding finger or pen, or a tap\'s mousemove, names nothing', () => {
+    const page = hoverPage();
     page.setNames(true);
     const s = skyFor().shown[0];
+    const at = page.pointAt(s.x, s.y);
+    page.move(at, 'touch');
+    page.tick();
+    page.move(at, 'pen');
+    page.tick();
+    assert.equal(page.label().hidden, true, 'a finger or pen sliding over the sky named it');
+    // A tap synthesises one mousemove and never a mouseleave, so a label lit
+    // by it would stay lit forever.
+    page.pre.dispatch('mousemove', at);
+    page.tick();
+    assert.equal(page.label().hidden, true, 'a compatibility mousemove named it');
+    assert.deepEqual(page.errors, []);
+});
+
+/* ---- star names on tap --------------------------------------------------- */
+
+// How far a tap reaches, in CSS px: half a 44px touch target. Mirrors main.js,
+// as does the mouse's two fifths of a cell, floored at 3px.
+const TOUCH_REACH = 22;
+const mouseReach = (charW) => Math.max(3, charW * 0.4);
+
+// The <pre>'s cell metrics, as the stub fonts give them.
+function cellSize(page) {
+    return { w: parseFloat(page.pre.style.fontSize) * 0.6, h: parseFloat(page.pre.style.lineHeight) };
+}
+
+/*
+ * A named star with no other painted star anywhere near it, and a direction
+ * pointing into the sky from it — so a tap offset from it by anything up to
+ * a reach and a half can only ever be answered by this star or by nothing.
+ */
+function loneStar(page, sky) {
+    const c = cellSize(page);
+    const centre = (p) => ({ x: (p.x + 0.5) * c.w, y: (p.y + 0.5) * c.h });
+    const painted = sky.cells.filter((p) => Scene.starVisible(p, sky.layout));
+    const s = sky.shown.find((t) => {
+        const a = centre(t);
+        return painted.every((o) => o === t || Math.hypot(centre(o).x - a.x, centre(o).y - a.y) > TOUCH_REACH * 3);
+    });
+    assert.ok(s, 'no named star stands far enough from the others to tap at');
+    return { star: s, dir: s.x < sky.grid.cols / 2 ? 1 : -1, cell: c };
+}
+
+// A pixel `px` to the side of a star's cell centre.
+function besideStar(page, lone, px) {
+    const r = page.rect(), c = lone.cell;
+    return {
+        clientX: r.left + (lone.star.x + 0.5) * c.w + lone.dir * px,
+        clientY: r.top + (lone.star.y + 0.5) * c.h
+    };
+}
+
+test('a tap names the star within a fingertip, not only the one under it', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const lone = loneStar(page, skyFor());
+    const s = lone.star;
+
+    // Where the mouse puts the label for this star, for comparison below.
     page.hover(s.x, s.y);
     page.tick();
-    // A tap synthesises one mousemove and never a mouseleave, so a label lit
-    // here would stay lit forever.
+    const want = { left: page.label().style.left, top: page.label().style.top };
+    page.leave();
     assert.equal(page.label().hidden, true);
+
+    // Off the star's own cell, well inside the reach.
+    const near = besideStar(page, lone, TOUCH_REACH * 0.7);
+    assert.notEqual(Math.floor((near.clientX - page.rect().left) / lone.cell.w), s.x,
+        'the tap should land beside the star, not on it');
+    page.tapAt(near);
+    assert.equal(page.label().hidden, false, 'a tap beside the star did not name it');
+    assert.equal(page.label().textContent, labelFor(s));
+    // Anchored to the star, not to the finger.
+    assert.deepEqual({ left: page.label().style.left, top: page.label().style.top }, want);
+
+    // Just past the reach is empty sky, and tapping it puts the name away.
+    page.tapAt(besideStar(page, lone, TOUCH_REACH * 1.3));
+    assert.equal(page.label().hidden, true, 'a tap past the reach named something');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a tapped name stays after the finger lifts', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const s = skyFor().shown[0];
+    page.tap(s.x, s.y);
+    assert.equal(page.label().textContent, labelFor(s));
+    // Nothing is left under the pointer once the finger is up — the name is
+    // what stays, until the next tap says otherwise.
+    page.leave('touch');
+    for (let i = 0; i < 30; i++) page.tick();
+    assert.equal(page.label().hidden, false, 'the name went away on its own');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a tap names nothing while names are off', () => {
+    const page = hoverPage();
+    const s = skyFor().shown[0];
+    page.tap(s.x, s.y);
+    page.tick();
+    assert.equal(page.label().hidden, true);
+
+    // And switching them off takes a tapped name away.
+    page.setNames(true);
+    page.tap(s.x, s.y);
+    assert.equal(page.label().hidden, false);
+    page.setNames(false);
+    assert.equal(page.label().hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a mouse click is not a tap: it names nothing the hover does not', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const lone = loneStar(page, skyFor());
+    // Inside a fingertip's reach, outside the star's cell: a tap here names it,
+    // a mouse here must not — clicking or not.
+    const near = besideStar(page, lone, TOUCH_REACH * 0.7);
+    page.clickAt(near);
+    page.tick();
+    assert.equal(page.label().hidden, true, 'a mouse click was taken for a tap');
+    page.tick();
+    assert.equal(page.label().hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a tapped name holds through a resize that keeps the grid, not a new grid or vantage', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const s = skyFor().shown[0];
+
+    // The same window again: every cell is where it was, so is the name.
+    page.tap(s.x, s.y);
+    assert.equal(page.label().textContent, labelFor(s));
+    page.resize(HOVER_W, HOVER_H);
+    page.tick();
+    assert.equal(page.label().hidden, false, 'a resize that moved nothing put the name away');
+    assert.equal(page.label().textContent, labelFor(s));
+
+    // A new grid — a rotation, on a phone — renumbers every cell.
+    page.resize(1100, 780);
+    page.tick();
+    assert.equal(page.label().hidden, true, 'the tapped name survived a new grid');
+
+    // A new vantage is a different sky — even a nudge that leaves the star
+    // on screen, a few cells over, where a label following it would jump.
+    page.resize(HOVER_W, HOVER_H);
+    page.tick();
+    page.tap(s.x, s.y);
+    assert.equal(page.label().hidden, false);
+    page.setHash('#lat=41.39&lon=3.17&dir=s');
+    page.tick();
+    const moved = SkyMap.starCells({ date: new Date(HOVER_NOW), lat: 41.39, lon: 3.17, azimuth: 180,
+        cols: skyFor().grid.cols, skyRows: skyFor().layout.fenceTop }).find((c) => c.index === s.index);
+    assert.ok(moved && Scene.starVisible(moved, skyFor().layout), 'the nudge should keep the star on screen');
+    assert.equal(page.label().hidden, true, 'the tapped name survived a new vantage');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a tapped star keeps its name when a setting draws a nearer one', () => {
+    // Held by catalogue number, not by pixel: high density paints faint stars
+    // around the tapped one, and one of them is nearer the finger than the
+    // star it named. Re-aiming at the pixel would hand the name to that one.
+    const page = hoverPage();
+    page.setNames(true);
+    const sky = skyFor();
+    const high = (() => {
+        page.setSettings({ names: true, constellations: false, density: 'high' });
+        page.tick();
+        const info = figuresFor(page);
+        page.setSettings({ names: true, constellations: false });
+        page.tick();
+        return info;
+    })();
+    const { w, h } = cellSize(page);
+    const centre = (p) => ({ x: (p.x + 0.5) * w, y: (p.y + 0.5) * h });
+    let pick = null;
+    for (const a of sky.shown) {
+        for (const b of high.stars) {
+            if (!(SkyMap.CATALOG[b.index * 3 + 2] > SkyMap.SKY_MAG_LIMIT)) continue;
+            if (!Scene.starVisible(b, high.layout) || !SkyMap.starLabel(b.index)) continue;
+            const ca = centre(a), cb = centre(b);
+            // Three fifths of the way to the faint star: nearer it, yet still
+            // within reach of the named one.
+            const p = { x: ca.x + 0.6 * (cb.x - ca.x), y: ca.y + 0.6 * (cb.y - ca.y) };
+            if (Math.hypot(p.x - ca.x, p.y - ca.y) >= TOUCH_REACH * 0.9) continue;
+            // And nothing else drawn at medium density is nearer the finger.
+            const rival = sky.shown.some((o) => o !== a &&
+                Math.hypot(centre(o).x - p.x, centre(o).y - p.y) < Math.hypot(ca.x - p.x, ca.y - p.y) + 1);
+            if (!rival) { pick = { a, b, p }; break; }
+        }
+        if (pick) break;
+    }
+    assert.ok(pick, 'no named star has a faint neighbour close enough to test with');
+    const r = page.rect();
+    page.tapAt({ clientX: r.left + pick.p.x, clientY: r.top + pick.p.y });
+    assert.equal(page.label().textContent, labelFor(pick.a));
+    page.setSettings({ names: true, constellations: false, density: 'high' });
+    page.tick();
+    assert.equal(page.label().textContent, labelFor(pick.a),
+        'the name went to a star the setting drew nearer the tapped pixel');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a tapped star is found again when a setting repaints the sky, and let go once it is not drawn', () => {
+    const page = hoverPage();
+    page.setSettings({ names: true, constellations: false, density: 'high' });
+    page.tick();
+    const info = figuresFor(page);
+    // A star only high density draws.
+    const faint = info.stars.find((s) =>
+        SkyMap.CATALOG[s.index * 3 + 2] > SkyMap.SKY_MAG_LIMIT && Scene.starVisible(s, info.layout) &&
+        SkyMap.starLabel(s.index));
+    assert.ok(faint, 'no faint star on screen to tap');
+    page.tap(faint.x, faint.y);
+    assert.equal(page.label().textContent, labelFor(faint));
+
+    // The figures on repaints the overlay and rebuilds the lookup; the star
+    // is still drawn, so it is still named — and no figure lights that the
+    // tap, made with the lines off, never reached.
+    page.setSettings({ names: true, constellations: true, density: 'high' });
+    page.tick();
+    assert.equal(page.label().textContent, labelFor(faint));
+    assert.equal(page.byClass('constellation-on').length, 0, 'a figure lit that nobody tapped');
+
+    // Back to the default density: the star is gone from the sky, and so is
+    // its name — rather than whatever now sits nearest the tapped pixel.
+    page.setSettings({ names: true, constellations: false });
+    page.tick();
+    assert.equal(page.label().hidden, true, 'a star no longer drawn is still named');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a tap on the gear or the panel puts the name away', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const s = skyFor().shown[0];
+    page.tap(s.x, s.y);
+    assert.equal(page.label().hidden, false);
+    // Otherwise it stays lit across the panel the gear opens.
+    const gear = page.gear();
+    page.tapAt({ clientX: HOVER_W - 20, clientY: 20 }, gear);
+    gear.click();
+    assert.equal(page.panel().hidden, false);
+    assert.equal(page.label().hidden, true, 'the name outlived a tap on the gear');
+
+    page.tap(s.x, s.y);
+    assert.equal(page.label().hidden, false);
+    page.tapAt(page.pointAt(s.x, s.y), page.panel());
+    assert.equal(page.label().hidden, true, 'the name outlived a tap on the panel over it');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a tap on the page around the grid is a tap on the sky', () => {
+    // The grid hangs from the bottom of the window, so the strip above its
+    // first row is bare page — and the stars along that row are within a
+    // fingertip of it.
+    const page = hoverPage();
+    page.setNames(true);
+    const s = skyFor().shown[0];
+    page.tapAt(page.pointAt(s.x, s.y), page.body());
+    assert.equal(page.label().textContent, labelFor(s), 'a tap landing on the page named nothing');
+    page.tapAt({ clientX: 5, clientY: 5 }, page.body());
+    assert.equal(page.label().hidden, true, 'a tap on bare page did not put the name away');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a cancelled gesture is not a tap', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const s = skyFor().shown[0];
+    const at = page.pointAt(s.x, s.y);
+    // A pinch or a pan: the browser takes the pointer and no click follows.
+    page.dispatchWindow('pointerdown', { pointerType: 'touch', pointerId: 4, target: page.pre, ...at });
+    page.dispatchWindow('pointercancel', { pointerType: 'touch', pointerId: 4, target: page.pre });
+    // So a later click with no gesture of its own is nobody's tap.
+    page.dispatchWindow('click', { target: page.pre, ...at });
+    assert.equal(page.label().hidden, true, 'a click after a cancelled gesture was taken for a tap');
+    assert.deepEqual(page.errors, []);
 });
 
 test('the label flips rather than running off the right edge', () => {
@@ -1256,7 +1563,7 @@ test('a resize re-aims the hover at the cell now under the cursor', () => {
     // The resize re-aimed the hover on its own. Re-dispatching the very same
     // pixel must agree with what it computed — if it did not, the metrics the
     // resize used and the metrics a move uses have drifted apart.
-    page.pre.dispatch('mousemove', pixel);
+    page.move(pixel);
     page.tick();
     assert.equal(page.label().hidden, hiddenAfterResize);
     assert.equal(page.label().textContent, afterResize);
@@ -1340,7 +1647,7 @@ function figuresFor(page) {
     const grid = gridFor(HOVER_W, HOVER_H);
     const L = Scene.layout(grid.cols, grid.rows);
     const fontSize = parseFloat(page.pre.style.fontSize);
-    const charW = fontSize * 0.6, lineH = parseFloat(page.pre.style.lineHeight);
+    const { w: charW, h: lineH } = cellSize(page);
     const positions = [];
     const stars = SkyMap.starCells({ date: new Date(HOVER_NOW), ...SkyMap.DEFAULT_VIEW,
         cols: L.cols, skyRows: L.fenceTop, density: 'high', positions });
@@ -1375,7 +1682,7 @@ function edgeDistance(e, x, y) {
 // not about which of two crossing lines the pointer was nearer, nor about the
 // star that would rightly win the label from under it.
 function aimAtFigure(info) {
-    const reach = Math.max(3, info.charW * 0.4);
+    const reach = mouseReach(info.charW);
     const named = new Set(info.stars
         .filter((s) => Scene.starVisible(s, info.layout) && SkyMap.starLabel(s.index))
         .map((s) => s.x + ':' + s.y));
@@ -1401,7 +1708,7 @@ function constellationPage() {
 
 function pointAtPixel(page, x, y) {
     const r = page.rect();
-    page.pre.dispatch('mousemove', { clientX: r.left + x, clientY: r.top + y });
+    page.move({ clientX: r.left + x, clientY: r.top + y });
     page.tick();
 }
 
@@ -1545,7 +1852,7 @@ test('a repaint re-lights the figure the pointer is still on', () => {
 test('a star at the end of a figure is named, and its figure still lights', () => {
     const page = constellationPage();
     const info = figuresFor(page);
-    const reach = Math.max(3, info.charW * 0.4);
+    const reach = mouseReach(info.charW);
     let found = null;
     for (const s of info.stars) {
         if (!Scene.starVisible(s, info.layout) || !SkyMap.starLabel(s.index)) continue;
@@ -1558,6 +1865,14 @@ test('a star at the end of a figure is named, and its figure still lights', () =
     assert.equal(page.label().textContent, labelFor(found.star),
         'the star should win the label over its figure');
     assert.equal(page.byClass('constellation-on').length, 1, 'and the figure should still light');
+
+    // A tap the same: the owner's decision, though at a fingertip's reach it
+    // hands most of the length of a line to the stars along it.
+    page.leave();
+    const r = page.rect();
+    page.tapAt({ clientX: r.left + found.x, clientY: r.top + found.y });
+    assert.equal(page.label().textContent, labelFor(found.star), 'a tap should give the star the label too');
+    assert.equal(page.byClass('constellation-on').length, 1);
     assert.deepEqual(page.errors, []);
 });
 
@@ -1631,16 +1946,115 @@ test('the faint stars high density adds are named without the constellations', (
     assert.deepEqual(page.errors, []);
 });
 
-test('a pointer that cannot hover lights nothing', () => {
-    const page = hoverPage({ hover: false });
-    page.setSettings({ names: true, constellations: true });
-    const aim = aimAtFigure(figuresFor(page));
-    pointAtPixel(page, aim.x, aim.y);
-    assert.equal(page.byClass('constellation-on').length, 0);
+/*
+ * A point near a line of one figure: past where a mouse would find it, well
+ * inside a fingertip, with every other figure and every named star beyond
+ * the reach and its cell showing sky — so a tap there can only mean the one
+ * figure, and a hover there can mean nothing.
+ */
+function nearFigure(info) {
+    const mouse = mouseReach(info.charW);
+    const off = (mouse * 1.5 + TOUCH_REACH * 0.6) / 2;
+    const stars = info.stars.filter((s) => Scene.starVisible(s, info.layout) && SkyMap.starLabel(s.index))
+        .map((s) => ({ x: (s.x + 0.5) * info.charW, y: (s.y + 0.5) * info.lineH }));
+    for (const f of [...info.figures].sort((a, b) => b.edges.length - a.edges.length)) {
+        for (const e of f.edges) {
+            const len = Math.hypot(e.x2 - e.x1, e.y2 - e.y1);
+            if (len < TOUCH_REACH) continue;
+            for (const side of [1, -1]) {
+                const x = (e.x1 + e.x2) / 2 - side * (e.y2 - e.y1) / len * off;
+                const y = (e.y1 + e.y2) / 2 + side * (e.x2 - e.x1) / len * off;
+                const cell = { x: Math.floor(x / info.charW), y: Math.floor(y / info.lineH) };
+                if (!Scene.starVisible(cell, info.layout)) continue;
+                const mine = Math.min(...f.edges.map((fe) => edgeDistance(fe, x, y)));
+                if (mine <= mouse || mine >= TOUCH_REACH) continue;
+                if (!info.figures.every((o) => o === f || o.edges.every((oe) => edgeDistance(oe, x, y) > TOUCH_REACH))) continue;
+                if (!stars.every((p) => Math.hypot(p.x - x, p.y - y) > TOUCH_REACH)) continue;
+                return { figure: f, x, y };
+            }
+        }
+    }
+    return null;
+}
+
+test('a tap near a line lights its figure, and a tap on the ground puts it out', () => {
+    const page = constellationPage();
+    const info = figuresFor(page);
+    const aim = nearFigure(info);
+    assert.ok(aim, 'no line in this sky stands clear enough to tap beside');
+    const r = page.rect();
+    const at = { clientX: r.left + aim.x, clientY: r.top + aim.y };
+
+    // Too far off the line for a mouse...
+    page.move(at);
+    page.tick();
+    assert.equal(page.byClass('constellation-on').length, 0, 'the point should be past the mouse\'s reach');
+    page.leave();
+
+    // ...close enough for a finger.
+    page.tapAt(at);
+    const lit = page.byClass('constellation-on');
+    assert.equal(lit.length, 1, 'the tap did not light the figure');
+    assert.equal(lit[0].children.length, aim.figure.edges.length);
+    assert.equal(page.label().textContent, aim.figure.name);
+
+    // The lawn holds no star and no line.
+    page.tap(Math.floor(info.layout.cols / 2), info.layout.rows - 1);
+    assert.equal(page.byClass('constellation-on').length, 0, 'the figure stayed lit');
     assert.equal(page.label().hidden, true);
     assert.deepEqual(page.errors, []);
 });
 
+test('a finger or pen sliding over a figure lights nothing', () => {
+    const page = constellationPage();
+    const aim = aimAtFigure(figuresFor(page));
+    const r = page.rect();
+    const at = { clientX: r.left + aim.x, clientY: r.top + aim.y };
+    ['touch', 'pen'].forEach((type) => {
+        page.move(at, type);
+        page.tick();
+        assert.equal(page.byClass('constellation-on').length, 0, `a ${type} move lit a figure`);
+    });
+    page.pre.dispatch('mousemove', at);
+    page.tick();
+    assert.equal(page.byClass('constellation-on').length, 0, 'a compatibility mousemove lit a figure');
+    assert.equal(page.label().hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a tap does not reach a line where the mask hides it', () => {
+    /*
+     * The tapped cell showing sky is not enough: within a fingertip, the
+     * nearest point of a line can be behind the moon or the fence, or above
+     * the window. Found rather than hard-coded, since which line runs where
+     * depends on the date: a pixel on open sky whose only lines in reach are
+     * reached at a point the mask hides.
+     */
+    const page = constellationPage();
+    const info = figuresFor(page);
+    const L = info.layout;
+    const sky = (x, y) => Scene.starVisible({ x: Math.floor(x / info.charW), y: Math.floor(y / info.lineH) }, L);
+    const nearest = (e, x, y) => {
+        const dx = e.x2 - e.x1, dy = e.y2 - e.y1, len2 = dx * dx + dy * dy;
+        const t = Math.max(0, Math.min(1, len2 ? ((x - e.x1) * dx + (y - e.y1) * dy) / len2 : 0));
+        return { x: e.x1 + t * dx, y: e.y1 + t * dy, d: Math.hypot(e.x1 + t * dx - x, e.y1 + t * dy - y) };
+    };
+    let aim = null;
+    for (let row = 0; row < L.fenceTop && !aim; row++) {
+        for (let col = 0; col < L.cols && !aim; col++) {
+            const x = (col + 0.5) * info.charW, y = (row + 0.5) * info.lineH;
+            if (!sky(x, y)) continue;
+            const inReach = info.figures.flatMap((f) => f.edges).map((e) => nearest(e, x, y))
+                .filter((p) => p.d < TOUCH_REACH);
+            if (inReach.length && inReach.every((p) => !sky(p.x, p.y))) aim = { x, y };
+        }
+    }
+    assert.ok(aim, 'no open sky in this fixture lies within reach of only hidden line');
+    const r = page.rect();
+    page.tapAt({ clientX: r.left + aim.x, clientY: r.top + aim.y });
+    assert.equal(page.byClass('constellation-on').length, 0, 'a tap lit a figure through the mask');
+    assert.deepEqual(page.errors, []);
+});
 
 test('all settings survive reloads and shared URLs override the saved vantage', () => {
     const values = new Map();

@@ -369,6 +369,9 @@
          */
         if (grid.cols !== last.cols || grid.rows !== last.rows) {
             last = grid;
+            // A tap is held in cells, and a new grid — a rotation, on a
+            // phone — renumbers every one of them.
+            tap = null;
             // Same frozen instant, new window: the sky is recomputed so a wider
             // grid reveals more of it at the edges without moving what is shown.
             computeStars();
@@ -380,7 +383,7 @@
         updateHover();
     }
 
-    /* ---- names on hover ---------------------------------------------------
+    /* ---- names on hover and tap -------------------------------------------
      * Off by default. js/menu.js announces the setting on window — the
      * analogue of the address bar announcing a vantage change — so neither
      * file names the other.
@@ -389,14 +392,16 @@
      * be, twice over. The sky is painted as merged runs, so two adjacent stars
      * sharing a twinkle class are a single <span> with nothing to attach to.
      * And the constellation overlay is `pointer-events: none` behind the
-     * scene — it has to be, or it would swallow the very mousemove that names
-     * the stars — so its lines never see a pointer either. Both are answered
-     * the same way: convert the pointer, then look it up.
+     * scene — it has to be, or it would swallow the very pointer events that
+     * name the stars — so its lines never see a pointer either. Both are
+     * answered the same way: convert the pointer, then look it up.
      *
-     * Stars are looked up by exact cell; figures by distance to a drawn line,
-     * because a line is a line and no cell contains it. The two are not rivals:
-     * near the end of a figure both answer, the star wins the label and the
-     * figure still lights up.
+     * A mouse hovers and a finger taps. The mouse looks stars up by exact
+     * cell; a tap, by the nearest within a fingertip. Figures are found by
+     * distance to a drawn line, because a line is a line and no cell contains
+     * it. Stars and figures are not rivals: where both answer, the star wins
+     * the label and the figure still lights up — for a tap too, though at a
+     * fingertip's reach that is most of the length of a line.
      */
     var HOVER_EVENT = 'settingschange';        // must match js/menu.js
     var LABEL_DX = 10, LABEL_DY = 6, LABEL_PAD = 6;
@@ -404,46 +409,57 @@
     // to catch without a steady hand, narrow enough that two lines crossing
     // the same patch of sky do not trade the highlight back and forth.
     var HIT_RATIO = 0.4, HIT_MIN_PX = 3;
+    // How far a tap reaches, for a star or a line: half the 44px touch target
+    // the platforms ask for. A fingertip covers several cells, so the exact
+    // cell a mouse is held to would be all but impossible to hit.
+    var TOUCH_REACH_PX = 22;
 
     var label = document.createElement('span');
     label.className = 'star-name';
     label.hidden = true;
-    // Mouse-only by nature. A live region reading names out as the pointer
+    // Pointer-only by nature. A live region reading names out as the pointer
     // drifts across the sky would be worse than silence.
     label.setAttribute('aria-hidden', 'true');
     document.body.appendChild(label);
 
     var hoverOn = false;
-    var hoverNames = null;     // 'x:y' -> { name, id }, painted stars only
+    var hoverNames = null;     // 'x:y' -> { lab, index, x, y }, painted stars only
+    var hoverStars = null;     // catalogue index -> the same entries
     var hoverBoxes = null;     // what the label must not be written across
     var hoverKey = null;       // what the label currently describes, tagged
     var hoverFigure = null;    // the lit constellation, or null
-    var ptrX = 0, ptrY = 0, ptrIn = false, ptrQueued = false;
-    var hoverQuery = window.matchMedia ? window.matchMedia('(hover: hover)') : null;
+    var ptrX = 0, ptrY = 0, ptrIn = false, ptrQueued = false;   // the mouse
+    var tap = null;            // what a finger last named — see tapAt
+    var downType = null;       // the pointerType of the gesture a click ends
 
     /*
-     * Keyed by cell, holding the resolved label rather than the star index, so
-     * the hover path is one property read and an unnamed star never enters the
-     * map at all. Built from Scene.starVisible — the very predicate buildScene
+     * Keyed by cell, holding the resolved label with the star, so the hover
+     * path is one property read and an unnamed star never enters the map at
+     * all; and by catalogue index too, so a tapped star can be found again
+     * after a setting repaints the sky. Built from Scene.starVisible — the very predicate buildScene
      * uses — so it cannot name a star that is not on the page; starCells()
      * output is a superset, since anything in the moon, cat or fence halo is
      * dropped. Rebuilt only where the sky can change, never per frame.
      */
     function buildHoverNames() {
         hoverNames = null;
+        hoverStars = null;
         hoverBoxes = null;
         if (!hasSky || !skyStars || !(last.cols > 0) || !SkyMap.starLabel) return;
         var L = Scene.layout(last.cols, last.rows);
         // Cached with the names rather than re-derived per frame: both only
         // change when the grid does.
         hoverBoxes = [L.moonBox, L.catBox];
-        var found = {};
+        var found = {}, byIndex = {};
         skyStars.forEach(function (s) {
             if (!Scene.starVisible(s, L)) return;
             var lab = SkyMap.starLabel(s.index);
-            if (lab) found[s.x + ':' + s.y] = lab;
+            if (!lab) return;
+            found[s.x + ':' + s.y] = byIndex[s.index] =
+                { lab: lab, index: s.index, x: s.x, y: s.y };
         });
         hoverNames = found;
+        hoverStars = byIndex;
     }
 
     function hideLabel() {
@@ -468,34 +484,76 @@
         hoverKey = null;
     }
 
-    // Distance from a point to a segment, clamped to the segment: a pointer
+    // The point of a segment nearest (x, y), clamped to the segment: a pointer
     // past the end of a line is measured to the end, not to the infinite ray.
-    function edgeDistance(e, x, y) {
+    function edgePoint(e, x, y) {
         var dx = e.x2 - e.x1, dy = e.y2 - e.y1;
         var len2 = dx * dx + dy * dy;
         var t = len2 ? ((x - e.x1) * dx + (y - e.y1) * dy) / len2 : 0;
         t = t < 0 ? 0 : (t > 1 ? 1 : t);
-        var px = e.x1 + t * dx - x, py = e.y1 + t * dy - y;
-        return Math.sqrt(px * px + py * py);
+        return { x: e.x1 + t * dx, y: e.y1 + t * dy };
+    }
+
+    // Is the sky showing at this pixel of the <pre>? The mask's predicate.
+    function skyAt(x, y, L) {
+        return Scene.starVisible({ x: Math.floor(x / charWpx), y: Math.floor(y / lineHpx) }, L);
     }
 
     // Nearest figure within reach, in the overlay's own coordinates — which
     // are the <pre>'s, since the SVG is positioned on its rect. Nearest rather
     // than first, so where two figures pass close the pointer picks one and
     // stays with it instead of flickering on data order.
-    function figureAt(x, y) {
-        // The drawn edges run on into the moon, the fence halo and past the
-        // horizon, where the mask hides them; the pointer must not find a
-        // line there that nobody can see. Same predicate as the mask.
-        var cell = { x: Math.floor(x / charWpx), y: Math.floor(y / lineHpx) };
-        if (!Scene.starVisible(cell, Scene.layout(last.cols, last.rows))) return null;
-        var best = null, bestD = Math.max(HIT_MIN_PX, charWpx * HIT_RATIO);
+    function figureAt(x, y, reach) {
+        /*
+         * The drawn edges run on into the moon, the fence halo and past the
+         * horizon, where the mask hides them; the pointer must not find a
+         * line there that nobody can see. So the sky must show both where the
+         * pointer is and at the point of the line it is taken to mean —
+         * within a fingertip's reach, those are often different cells.
+         */
+        var L = Scene.layout(last.cols, last.rows);
+        if (!skyAt(x, y, L)) return null;
+        var best = null, bestD = reach;
         constellationHits.forEach(function (hit) {
             hit.edges.forEach(function (e) {
-                var d = edgeDistance(e, x, y);
-                if (d < bestD) { bestD = d; best = hit; }
+                var p = edgePoint(e, x, y);
+                var d = Math.sqrt((p.x - x) * (p.x - x) + (p.y - y) * (p.y - y));
+                if (d < bestD && skyAt(p.x, p.y, L)) { bestD = d; best = hit; }
             });
         });
+        return best;
+    }
+
+    function figureById(id) {
+        for (var i = 0; i < constellationHits.length; i++) {
+            if (constellationHits[i].figure === id) return constellationHits[i];
+        }
+        return null;
+    }
+
+    /*
+     * The painted, named star nearest a tap, measured to its cell centre, if
+     * one is within reach — scanning only the cells the reach can touch, so a
+     * tap costs a few dozen property reads rather than a pass over the sky.
+     * Nearest rather than first, so a tap between two stars names the one it
+     * was nearer.
+     */
+    function starNear(x, y) {
+        if (!hoverNames) return null;
+        var c0 = Math.floor((x - TOUCH_REACH_PX) / charWpx);
+        var c1 = Math.floor((x + TOUCH_REACH_PX) / charWpx);
+        var r0 = Math.floor((y - TOUCH_REACH_PX) / lineHpx);
+        var r1 = Math.floor((y + TOUCH_REACH_PX) / lineHpx);
+        var best = null, bestD = TOUCH_REACH_PX;
+        for (var row = r0; row <= r1; row++) {
+            for (var col = c0; col <= c1; col++) {
+                var s = hoverNames[col + ':' + row];
+                if (!s) continue;
+                var c = Scene.cellCentre(s, charWpx, lineHpx);
+                var d = Math.sqrt((c.left - x) * (c.left - x) + (c.top - y) * (c.top - y));
+                if (d < bestD) { bestD = d; best = s; }
+            }
+        }
         return best;
     }
 
@@ -553,8 +611,44 @@
         label.style.top = best[1] + 'px';
     }
 
+    /*
+     * What is being pointed at, as { star, figure, x, y }: a painted, named
+     * star entry, a drawn figure, and the cell to anchor the label to when
+     * there is no star. The mouse is looked up where it is, afresh each time.
+     * A tap was looked up once, where it landed (tapAt), and is only found
+     * again — the star by catalogue index, the figure by id — so a setting
+     * that repaints the sky cannot swap in a stranger at the tapped pixel,
+     * nor light a figure an empty tap never reached.
+     */
+    function mouseTarget(r) {
+        var x = ptrX - r.left, y = ptrY - r.top;
+        var col = Math.floor(x / charWpx);
+        var row = Math.floor(y / lineHpx);
+        var inGrid = col >= 0 && col < last.cols && row >= 0 && row < last.rows;
+        return {
+            star: inGrid && hoverNames ? hoverNames[col + ':' + row] || null : null,
+            figure: inGrid && constellationsOn
+                ? figureAt(x, y, Math.max(HIT_MIN_PX, charWpx * HIT_RATIO)) : null,
+            x: col, y: row
+        };
+    }
+
+    function tapTarget() {
+        return {
+            star: tap.index !== null && hoverStars ? hoverStars[tap.index] || null : null,
+            figure: tap.figure !== null && constellationsOn ? figureById(tap.figure) : null,
+            x: tap.x, y: tap.y
+        };
+    }
+
     function updateHover() {
-        if (!ptrIn || !(charWpx > 0 && lineHpx > 0) || !hoverOn) {
+        /*
+         * The naming setting is the one switch for "answer what I am
+         * pointing at", star or figure alike — the highlight included, the
+         * owner's decision: with names off, the lines are scenery and hold
+         * still under the pointer.
+         */
+        if (!hoverOn || !(charWpx > 0 && lineHpx > 0) || !(tap || ptrIn)) {
             clearHighlight();
             hideLabel();
             return;
@@ -563,23 +657,16 @@
         // wrapper's bottom anchoring, and caching it would buy an
         // invalidation protocol that has to know about resize, zoom and DPR.
         var r = pre.getBoundingClientRect();
-        var col = Math.floor((ptrX - r.left) / charWpx);
-        var row = Math.floor((ptrY - r.top) / lineHpx);
-        var inGrid = col >= 0 && col < last.cols && row >= 0 && row < last.rows;
-        var star = inGrid && hoverNames ? hoverNames[col + ':' + row] : null;
-        /*
-         * The naming setting is the one switch for "answer what I am
-         * pointing at", star or figure alike — the highlight included, the
-         * owner's decision: with names off, the lines are scenery and hold
-         * still under the pointer.
-         */
-        var figure = inGrid && constellationsOn ? figureAt(ptrX - r.left, ptrY - r.top) : null;
-        if (figure !== hoverFigure) {
+        var t = tap ? tapTarget() : mouseTarget(r);
+        // A setting took what was tapped off the sky: let the tap go with it.
+        if (tap && !t.star && !t.figure) tap = null;
+        if (t.figure !== hoverFigure) {
             clearHighlight();
-            if (figure) figure.group.setAttribute('class', FIGURE_ON_CLASS);
-            hoverFigure = figure;
+            if (t.figure) t.figure.group.setAttribute('class', FIGURE_ON_CLASS);
+            hoverFigure = t.figure;
         }
-        var key = star ? 'star:' + col + ':' + row : (figure ? 'figure:' + figure.figure : null);
+        var star = t.star;
+        var key = star ? 'star:' + star.index : (t.figure ? 'figure:' + t.figure.figure : null);
         if (!key) {
             hideLabel();
             return;
@@ -589,24 +676,35 @@
         if (key !== hoverKey) {
             hoverKey = key;
             label.textContent = star
-                ? (star.id ? star.name + '  ' + star.id : star.name)
-                : figure.name;
+                ? (star.lab.id ? star.lab.name + '  ' + star.lab.id : star.lab.name)
+                : t.figure.name;
             label.hidden = false;
         }
-        placeLabel(col, row, r);
+        // Anchored to the star rather than the finger, which a tap need not
+        // have put on it.
+        placeLabel(star ? star.x : t.x, star ? star.y : t.y, r);
     }
 
+    /*
+     * Routed per event by pointerType, not by what the device's primary
+     * pointer is: a touch-screen laptop answers (hover: hover) and a tablet
+     * with a trackpad does not, and each is used both ways. A mouse hovers;
+     * a finger or a pen taps.
+     *
+     * Listening to pointer events rather than mouse events is itself the
+     * guard against the compatibility mousemove a tap synthesises — one that
+     * no mouseleave ever follows, so answering it would light a label and
+     * keep it lit.
+     */
     function onMove(e) {
-        // Gated first, so with names off — the default — a mousemove costs
-        // one comparison and never reaches the frame clock.
+        // Gated first, so with names off — the default — a move costs one
+        // comparison and never reaches the frame clock.
         if (!hoverOn) return;
-        // Checked live, like the reduced-motion query. A tap synthesises one
-        // mousemove and no mouseleave ever follows it, so without this a
-        // touch device would light a label and keep it lit.
-        if (hoverQuery && !hoverQuery.matches) return;
+        if (e.pointerType !== 'mouse') return;
         ptrX = e.clientX;
         ptrY = e.clientY;
         ptrIn = true;
+        tap = null;
         if (ptrQueued) return;
         ptrQueued = true;
         requestAnimationFrame(function () {
@@ -615,16 +713,76 @@
         });
     }
 
-    pre.addEventListener('mousemove', onMove);
+    pre.addEventListener('pointermove', onMove);
     // Leaving the scene covers moving onto the gear or the open panel too:
     // the browser does that hit-testing, so nothing here needs to know the
     // menu exists. A window-level listener would have gone on naming stars
-    // hidden behind it.
-    pre.addEventListener('mouseleave', function () {
+    // hidden behind it. A finger leaves on every lift, and a tapped name is
+    // meant to stay until the next tap, so only a mouse leaving counts.
+    pre.addEventListener('pointerleave', function (e) {
+        if (e.pointerType !== 'mouse') return;
         ptrIn = false;
         clearHighlight();
         hideLabel();
     });
+
+    /*
+     * Look a tap up, once, where it landed, and keep what it found by name:
+     * the star by catalogue index, the figure by id, and the cell to anchor a
+     * figure's label to. Null when it landed near nothing — which is how a
+     * name is put away.
+     */
+    function tapAt(clientX, clientY) {
+        if (!(charWpx > 0 && lineHpx > 0) || !(last.cols > 0)) return null;
+        var r = pre.getBoundingClientRect();
+        var x = clientX - r.left, y = clientY - r.top;
+        var star = starNear(x, y);
+        var figure = constellationsOn ? figureAt(x, y, TOUCH_REACH_PX) : null;
+        if (!star && !figure) return null;
+        return {
+            index: star ? star.index : null,
+            figure: figure ? figure.figure : null,
+            x: Math.floor(x / charWpx), y: Math.floor(y / lineHpx)
+        };
+    }
+
+    // Is this the scene — the <pre>, its wrapper, or the bare page around
+    // them? Anything else under a finger is the gear or the open panel.
+    function onScene(node) {
+        if (node === document.body || node === document.documentElement ||
+            node === pre.parentNode) return true;
+        for (; node; node = node.parentNode) if (node === pre) return true;
+        return false;
+    }
+
+    /*
+     * A tap is a click rather than a pointerup: by then the browser has
+     * decided it was one — within its own slop, and not the end of a pan, a
+     * pinch or a long press, none of which click. Not every browser gives a
+     * click a pointerType, so the pointerdown that began the gesture records
+     * it, and a cancelled gesture forgets it. A mouse click is ignored: the
+     * mouse already names whatever it is over, by hovering.
+     *
+     * Heard on the window, in the capture phase, rather than on the <pre>.
+     * The grid hangs from the bottom of the window and need not reach its
+     * top, and a tap in that strip is still a tap on the sky; and a tap on
+     * the gear or the panel must put the name away, or it would be left lit
+     * across the panel — which the target says without this file having to
+     * know the menu exists.
+     */
+    addEventListener('pointerdown', function (e) {
+        downType = e.pointerType;
+    }, true);
+    addEventListener('pointercancel', function () {
+        downType = null;
+    }, true);
+    addEventListener('click', function (e) {
+        var type = downType;
+        downType = null;
+        if (!hoverOn || !type || type === 'mouse') return;
+        tap = onScene(e.target) ? tapAt(e.clientX, e.clientY) : null;
+        updateHover();
+    }, true);
 
     /*
      * Deliberately NOT wired to motionGen. The label does not animate, and
@@ -650,8 +808,12 @@
         }
         // Nothing is listening for the pointer any more, so the last position
         // it reported will be stale by the time something is: forget it rather
-        // than light up wherever the cursor happened to be left.
-        if (!hoverOn) ptrIn = false;
+        // than light up wherever the cursor happened to be left — and forget
+        // a tap, which names off has put away.
+        if (!hoverOn) {
+            ptrIn = false;
+            tap = null;
+        }
         updateHover();
     });
 
@@ -887,7 +1049,9 @@
         if (!hasSky) return;
         skyView = SkyMap.parseView(currentHash());
         computeStars();
-        // Same cell under the cursor, different star in it.
+        // Same cell under the cursor, different star in it. A tapped star is
+        // somewhere else in a different sky, so the tap is let go.
+        tap = null;
         buildHoverNames();
         redraw();
         paintConstellations();

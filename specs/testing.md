@@ -26,7 +26,12 @@ webpage code and assets only — keep development tooling out of the suite.
   value: a meteor loop that assumed the clock starts at zero passed every other
   test while the live page showed no shooting stars at all. The harness can
   also resize the window and flip `prefers-reduced-motion` mid-run, and can pin
-  `Math.random` so a test can aim a flight exactly.
+  `Math.random` so a test can aim a flight exactly. `hover()` is a mouse
+  `pointermove`; `tapAt()` replays a tap in a browser's order — pointer events,
+  the finger's `pointerleave`, the compatibility `mousemove`, then a `click`
+  with no `pointerType` — and sends the pointer events and the click to the
+  window with a `target`, since the stub does not bubble and `main.js` hears
+  taps there.
 
 ## Harness traps
 
@@ -36,7 +41,8 @@ The browser stubs must behave like browsers do, or a regression passes green:
   [settings-panel.md](settings-panel.md)); one that always fired would hide a
   panel that waits for its own event.
 - The stub `matchMedia` used to ignore its argument, so `(hover: hover)`
-  answered with the reduced-motion state.
+  answered with the reduced-motion state. It answers only the reduced-motion
+  query now; anything else is `false`.
 - At the default 1400×900 the grid *exactly* fills the window, so `rect.top` is
   0 and code ignoring the wrapper's bottom anchoring passes. Hover tests run at
   1400×939 and assert `top > 0`.
