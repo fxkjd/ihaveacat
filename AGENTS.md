@@ -40,474 +40,92 @@ shows instead.
 
 All of the above are enforced by tests.
 
+## Specs
+
+Each area's rules — and the reasons behind them, most of them learned the hard
+way — live in `specs/`. **Read the relevant spec before changing that area**,
+and update it in the same change when a rule moves.
+
+- [Scene](specs/scene.md) — sizing, layout, fence, cat, lawn, determinism.
+- [Sky and moon](specs/sky.md) — star catalog, projection, star density, moon
+  phase algorithm.
+- [Animations](specs/animations.md) — tail wag, shooting stars, fireflies,
+  reduced motion.
+- [Settings panel](specs/settings-panel.md) — the gear menu, the URL fragment,
+  persisted display settings.
+- [Constellations](specs/constellations.md) — figure lines, masking, figure
+  hover.
+- [Star names](specs/star-names.md) — the hover-to-name lookup and its label.
+- [Testing](specs/testing.md) — what each suite pins, the browser harness and
+  its traps.
+
 ## Architecture
 
-- `js/moon.js` — phase math and moon cell generation. Pure, DOM-free, UMD-lite
-  (`window.MoonPhase` / `module.exports`).
-- `js/sky.js` — the real night sky. A vendored star catalog (HYG v4.1,
-  1,637 stars to magnitude 5.0 plus 20 constellation endpoints,
-  whole sphere, brightest-first; maintained directly in `js/sky.js`)
-  plus textbook sidereal-time and alt/az math (Meeus), a 1°-per-column /
-  2°-per-row projection with the fence as the horizon, and `parseView` for the
-  URL hash. It also carries `NAMES`/`IDS` — parallel to the catalog by index,
-  covering every star down to `SKY_MAG_LIMIT` — plus `EXTRA_NAMES`/`EXTRA_IDS`,
-  keyed by index, for the constellation endpoints below it, and
-  `starLabel(index)` over both. `visibleSegments` tags each edge with the
-  figure that drew it, and `figureName(i)` spells that figure out.
-  Pure like moon.js: the **date is an argument** — no clock, no
-  randomness, no DOM (enforced by a test). The catalog is the map, not the
-  view: seasons and hours come from the sidereal formula, and the data itself
-  is good for decades (proper motion ~900 yr/cell; precession ~0.36° since
-  J2000, uncorrected on purpose).
-- `js/scene.js` — composes the whole scene for a grid size: sizing math
-  (`fitFontSize`/`fitGrid`), `layout()`, sprite data, and seeded placement of
-  stars, lawn, weathering and vines. **Pure**: no DOM, no `Date`, no
-  `Math.random`, no timers. It does *not* require `moon.js` — callers pass
-  `MoonPhase.renderMoonRows(phase)` in, so the two stay independently testable.
+Classic scripts sharing UMD-lite globals (`window.X` / `module.exports`). The
+pure modules take everything — date, grid size, phase, animation state — as
+arguments: **no DOM, no `Date`, no `Math.random`, no timers** (enforced by
+tests).
+
+- `js/moon.js` — `MoonPhase`: phase math and moon cell generation. Pure.
+- `js/constellations.generated.js` — 88 figures as catalogue-index pairs;
+  loads before `sky.js`.
+- `js/sky.js` — `SkyMap`: the real night sky. A vendored HYG v4.1 catalog and
+  star-name tables, Meeus sidereal and alt/az math, the grid projection with
+  the fence as the horizon, and `parseView`/`formatView` for the URL hash.
+  Pure: the **date is an argument**.
+- `js/scene.js` — `Scene`: composes the whole scene for a grid size — sizing
+  (`fitFontSize`/`fitGrid`), `layout()`, sprites, seeded placement of stars,
+  lawn, weathering and vines, and `buildScene`. Pure. It does *not* require
+  `moon.js`: callers pass `MoonPhase.renderMoonRows(phase)` in, so the two stay
+  independently testable.
 - `js/main.js` — browser wiring only. Measures character metrics with an
-  offscreen probe, derives font and grid size from the viewport, and paints into
-  `<pre id="scene">` with `createElement`/`textContent` (never `innerHTML`).
-  Owns **all scene animation timing and randomness**. Each row is its own `<span>`, so an
-  animation frame repaints only the rows that changed. If anything fails before
-  the first paint, the static fallback is left alone. It also owns the
-  hover-to-name lookup and its floating label (see **Star names** below).
-- `js/menu.js` — the settings panel: a gear in the top-right that opens a small
-  ASCII readout for latitude, longitude, facing direction, the star density,
-  and the constellations and names checkboxes. Split like the
-  rest: `rows(fields, settings)` is **pure** art over pre-formatted strings, in the same
-  `{text, cls}` shape `scene.js` emits (so `test/menu.test.js` pins the drawing
-  with no DOM at all); `install()` is the wiring. It writes the URL fragment and
-  **there is no wire to `main.js` on purpose** — the panel, the address bar, a
-  shared link and the Back button are then one code path, and the URL always
-  says what is drawn. Display settings that do not travel in the fragment are
-  announced as a `CustomEvent` on `window` instead, which is the same idea: a
-  channel the browser owns, not a reference between the two files. It builds
-  itself from script, so nothing appears on the no-JS page that could not work.
+  offscreen probe, derives font and grid size from the viewport, and paints
+  into `<pre id="scene">` with `createElement`/`textContent` (never
+  `innerHTML`), one `<span>` per row so a frame repaints only the rows that
+  changed. Owns **all scene animation timing and randomness**, the
+  constellation overlay and the star-name hover. If anything fails before the
+  first paint, the static fallback is left alone.
+- `js/menu.js` — the settings panel. `rows(fields, settings)` is **pure** art in
+  `scene.js`'s `{text, cls}` shape; `install()` is the wiring. It reaches
+  `main.js` only through channels the browser owns — the URL fragment and a
+  `settingschange` `CustomEvent` on `window` — and **never by reference, on
+  purpose**: the panel, the address bar, a shared link and the Back button are
+  then one code path, and the URL always says what is drawn.
 - `css/style.css` — site styling, the monospace stack with ligatures and kerning
   disabled (a coding font ligating `/\`, `=\`, `===` would break the character
-  grid), and the `.fence`/`.lawn`/`.vine`/`.meteor`/star classes. The bare `pre`
+  grid), and a rule for every class the scene and menu emit. The bare `pre`
   rules are the no-JS fallback's layout; `main.js` overrides them inline.
-- `test/moon.test.js` — pins the algorithm to published dates plus the moon's
-  rendering invariants.
-- `test/sky.test.js` — pins the astronomy to **published values** (Meeus
-  examples 12.b and 13.b, Polaris-at-latitude geometry), never to our own
-  output; plus catalog integrity, projection invariants, `parseView`, and
-  sky.js purity. The star names are pinned the same way — index 0 is Sirius
-  because the catalog is sorted brightest-first, not because we said so.
-- `test/scene.test.js` — pins art fidelity byte-for-byte, sizing and layout
-  sweeps, determinism and resize stability, placement, and the animations.
-- `test/menu.test.js` — pins the panel's art byte-for-byte and its column
-  alignment. Requiring the module in Node *is* the purity test: there is no
-  `document`, so `install()` never runs and `rows()` has to stand alone.
-- `test/page.test.js` — fallback drift, `file://`/script-order/case safety, CSP
-  cleanliness, CSS class coverage for both the scene and the menu, and every
-  UMD browser global.
-- `test/browser.test.js` — **runs `main.js`** against a stub DOM and a stub
-  frame clock, because the other suites only test the pure module and read
-  `main.js` as text. Its clock deliberately starts at a large, page-load-relative
-  value: a meteor loop that assumed the clock starts at zero passed every other
-  test while the live page showed no shooting stars at all. The harness can
-  also resize the window and flip `prefers-reduced-motion` mid-run, and can pin
-  `Math.random` so a test can aim a flight exactly.
+- `test/` — one suite per module, plus `page` (HTML/CSS/CSP contract) and
+  `browser` (runs `main.js` against a stub DOM and frame clock).
 
-Both traps above were the same testing mistake: **asserting only at the tidy
-value**. A flying meteor is never on a whole row and a frame clock never starts
-at zero, so anything checked only at row 40 or time 0 is checked at the one
-point that cannot fail. Sweep the fractional row; start the clock late.
+The scene is identical for a given moment and *translates* rather than
+reshuffles when the window resizes. Chrome (the panel, the name label) never
+paints into `<pre id="scene">` and never scales with the art.
 
-## Scene rules
+## Testing lesson
 
-- **The cat and moon hold a constant proportion of the window** at every size,
-  and they and the fence are always fully visible. The always-visible core is
-  45×29 cells; `BASE_COLS` (53) × `BASE_ROWS` (44) is the smallest grid it fits
-  in, and `fitGrid` never returns less. There is deliberately **no font-size cap
-  or floor**: a cap breaks "constant proportion", a floor breaks "always
-  visible", and a 4K window rendering proportionally larger characters is the
-  requirement working, not a bug. To make the art smaller relative to the
-  window, raise `BASE_ROWS` (in practice `TOP_PAD_ROWS`) — the only intended knob.
-- **The moon is anchored to the cat**, `MOON_CAT_GAP_ROWS` (8) above it, never to
-  the top of the screen. The cat hangs off the bottom via the fence, so anchoring
-  the moon to row 0 made the gap grow without bound on tall windows.
-- **The fence spans the whole viewport**, running off both edges, so it has no
-  visible end. A fixed-width fence ended in a full-height post that read as an
-  ugly cut, and a tapered end still left a drop.
-- **The fence stays subordinate to the cat and moon** — muted brown `.fence`,
-  weathered with occasional sagging and missing pickets, and sparse `.vine`
-  climbers. At the cat's white it outweighed the cat itself.
-- **The pickets around the cat's tail (core cols 8–20) are never weathered or
-  vined** — the tail weaves through them. Enforced in `picketState`/`vineRows`.
-- **The cat's silhouette is entirely white.** It stands *in front of* the fence,
-  so the rail is occluded across its base and the tail region takes the cat's
-  colour. Otherwise the rail's brown butts into the leg tips and closes the gap
-  between the legs, greying out the cat's base.
-- **The stars are the real sky** — Barcelona looking south by default, any
-  vantage via the hash fragment, frozen at the load instant (refreshing is how
-  time advances; same contract as the moon phase). The panel's star density
-  picks the cutoff: `SKY_MAG_LIMIT` (3.6) is **medium**, the default,
-  calibrated to the original ~1.1%; **low** is `SKY_LOW_MAG_LIMIT` (3.3, the
-  owner's choice); **high** is medium plus every constellation endpoint down
-  to magnitude 6.5 — exactly what the figures draw. `starEnabled(index,
-  density)` is the one predicate, and any other density reads as medium.
-  Brightness maps to
-  the original glyphs (`*` ≤ 2.0, `'` ≤ 3.0, `.` fainter). **The moon stays
-  anchored above the cat wherever the real moon is — the one unreal object,
-  on purpose.** The seeded hash stars remain as scene.js's fallback whenever
-  no `stars` input is supplied (tests, no-sky environments), still at ~1.1%.
-- `GROUND_EXTRA_ROWS` (2) is the lawn's thickness, drawn strictly below the
-  fence; `LAWN_ROW_DENSITY` must have exactly that many entries. It is balanced
-  against `TOP_PAD_ROWS` (13) to keep `BASE_ROWS` at 44 — change them as a pair
-  unless you mean to resize the art.
-- `CORE_COLS` (45) is the width reserved for the cat and moon, not the fence
-  (which is unbounded).
+**Never assert only at the tidy value.** A flying meteor is never on a whole
+row and a frame clock never starts at zero, so anything checked only at row 40
+or time 0 is checked at the one point that cannot fail — a meteor loop that
+assumed a zero clock passed every other test while the live page showed no
+shooting stars at all. Sweep the fractional row; start the clock late.
 
-## Animations
+## Settled decisions
 
-Scheduled from `main.js`; `scene.js` takes the current `tailFrame`, `meteor`
-head and `fireflies` as plain inputs and stays pure.
+The owner has decided these; don't reopen them. The reasons are in the specs.
 
-- **Tail wag** — every 5–10 s, a full sweep through `TAIL_WAG_SEQUENCE` at
-  ~180 ms per frame, then back to rest. It steps between poses rather than
-  moving anything continuously, so it stays on `setTimeout` deliberately;
-  `requestAnimationFrame` would buy it nothing.
-- **Shooting star** — every 20–30 s on one of the two `METEOR_PATHS`: the cell
-  diagonal, down-left or down-right. The flight is aimed at a point in the open
-  sky and extended outwards until the whole streak is off-screen at both ends,
-  so it never pops in or out; on a narrow window it may leave through a side
-  edge rather than the bottom.
-- **Fireflies** — `FIREFLY_MAX` (2) independent slots; each lights a random
-  lawn cell, steps dim → bright → dim through `FIREFLY_BLINK_SEQUENCE` (~2.8 s
-  at `FIREFLY_STEP_MS` per pose), goes dark for 3–7 s, then lights somewhere
-  new. They blink **in place** — no drifting. Discrete poses, so `setTimeout`
-  like the wag; brightness is colour classes repainted by JS, not a CSS
-  keyframe, so the reduced-motion CSS list needs no entry for them.
-  `FIREFLY_MIN_MS`/`FIREFLY_MAX_MS` (the gap range) is the density knob.
-
-Rules:
-
-- **`buildScene` with no animation options renders exactly the resting page**, so
-  the feature cannot drift the static scene.
-- The tail is blitted **in front of** the fence and vines and erases what it
-  covers; posts under it return on their own as it swings past. Boxing it in to
-  protect those posts once limited it to a tiny rightward twitch.
-- Fence row 0 never animates — it is the cat's rear (`CAT_BASE_ART`), where the
-  tail attaches. Poses cover fence rows 1–3 only.
-- The tail is a **pendulum** (attachment travels least, tip most) and its glyphs
-  express **slope**: `/`, `\`, `|`, and the curved parens at rest. Using the same
-  curves at every pose made it look like it was teleporting rather than rotating.
-- **The cell diagonal is the only slope, and this is settled.** `\` and `/` run
-  corner to corner, so on a one-column-per-row diagonal every glyph touches the
-  next and the streak is a single unbroken line. Nothing else in ASCII joins up:
-  `-` connects only along a row, `|` only down a column, and the baseline glyphs
-  `` ` `` `-` `.` only within a row. Shallow paths (drawn `---`, later `` `-. ``)
-  and steep ones (drawn `|`) were each built out in full and each read as a
-  staircase or a ladder of detached marks. Don't add them back.
-- Because the slope is exactly one cell per row, a streak has **no sub-cell
-  resolution**: it advances a whole cell at a time and the whole trail moves
-  together. That is the floor on how smooth an ASCII meteor gets. It is not a
-  defect awaiting cleverer glyphs — the cleverer glyphs were the staircase.
-- The tail thins to `.` behind the stroke, so it does not end on a hard edge.
-- **`METEOR_CELLS_PER_SEC` is the only speed knob** — grid cells per second
-  along the flight, roughly one cell per frame at 60 Hz.
-- **The flight runs on `requestAnimationFrame`, positioned from elapsed time.**
-  Never a frame count on a timer: `setTimeout` lands between refreshes, so each
-  step was held for one, two or three of them in an uneven pattern and every
-  hiccup became a stumble. Time-based position also means a dropped frame costs
-  nothing, and a backgrounded tab ends the flight cleanly instead of replaying it.
-- **Never hand the loop a made-up first timestamp.** `rAF` counts from page
-  load, not from zero, so kicking the loop off yourself with `frame(0)` made the
-  first real callback look thousands of milliseconds late: every flight jumped
-  straight past its own end and the page ran with no meteors at all, silently.
-  Start it with `requestAnimationFrame(frame)` and let the first callback set
-  the origin. Covered by `test/browser.test.js`.
-- `main.js` carries the head at a fractional position because position comes
-  from elapsed time; `meteorCells` and `meteorAlive` round it. Keep the flying
-  position fractional and the rounding at the edges — rounding early quantises
-  the *timing* as well as the drawing, which is what made it stumble.
-- **`runMeteor` re-derives the layout every frame** instead of reusing its
-  launch copy — only the aim comes from launch. `buildScene` always draws with
-  the current grid, so judging the flight against the launch layout let a
-  mid-flight resize move the moon into the path: the streak vanished crossing
-  the disc's new position, then re-emerged below it and flew on through the
-  very thing it is supposed to die against.
-- **A meteor dies on contact with the cat's or the moon's bounding box** — both
-  by box, never by glyph. The cat is an outline, so most of its box is blank and
-  a glyph test let streaks draw straight through its body. The moon needs it for
-  a different reason: drawing the streak across the disc looked wrong, and
-  merely hiding the overlapping cells was worse, swallowing the head and leaving
-  a stub of trail hanging behind it. Killing the whole meteor is the wanted
-  behaviour. `meteorAlive` rounds the head first so the test matches the cell
-  actually drawn; judging the fraction let a head just outside a box put its
-  glyph just inside it and get clipped.
-- Meteors overwrite stars and nothing else. The fence needs no test — cells at
-  or below the horizon are clipped, so meteors slide behind it.
-- **Fireflies exist only in the lawn rows** — the owner's decision. `buildScene`
-  clips them against the CURRENT layout's ground band (and the grid) and drops
-  the rest silently, so one spawned before a resize can never surface on the
-  fence or in the sky — it goes dark and the next blink spawns on the new grid.
-  Each spawn picks its cell from the current `last` grid; the two slots may
-  rarely coincide, which draws one glyph and is harmless.
-- All of them honour `prefers-reduced-motion` **live**, matching the CSS twinkle
-  guard (a media query, so the stars stop the instant the OS setting flips —
-  sampling it once at load left the JS animations running until reload).
-  `motionGen` is a generation counter: every flip bumps it, every timer/rAF
-  chain carries the generation it started with and dies silently on mismatch.
-  That stops running chains without keeping handles to them, and makes restarts
-  idempotent — a timer still pending from before the flip cannot revive a second
-  chain. The change listener also clears `anim.fireflies` — the `gen` check only
-  stops the chain, and without the reset a lit glow froze on screen (invisible
-  to a byte-stillness assertion; `test/browser.test.js` checks the snuff
-  explicitly).
-
-## Settings panel
-
-The gear in the top-right corner opens the panel; it is shut on every load.
-`SkyMap.formatFields`/`formatView` are the inverse of `parseView` and live
-beside it, so the fragment's syntax is written down once and a round-trip test
-guards the pair. The panel displays *literally the strings it would write*, so
-what you read and what the URL says can never drift apart.
-
-- **The menu is chrome, not scenery.** It never paints into `<pre id="scene">`
-  (a test asserts the scene is byte-identical across open, commit and close),
-  its font size is **clamped** instead of scaling with the art — "no font-size
-  cap" is a rule about the *scene*, and chrome obeying it would be 60px on a 4K
-  window — and owns no randomness. Scene animation timers stay in `main.js`;
-  the menu owns only its coordinate-button hold-repeat timer.
-- **One fragment write per deliberate change** (Enter, blur, a compass click),
-  never per keystroke: each write is a history entry. A commit that does not
-  move the vantage writes **nothing at all**, not even to canonicalise the
-  spelling — otherwise opening the panel and leaving a field would stamp a
-  fragment onto a URL that never had one, and the blur that follows Escape
-  would commit the very edit Escape abandons. `close()` restores the fields
-  *before* it moves focus, for the same reason.
-- **Setting the fragment to the value it already holds fires no `hashchange`.**
-  The panel updates itself before writing and never waits for the event to come
-  back. The stub in `test/browser.test.js` models this faithfully — one that
-  always fired would let a regression pass green.
-- **Opening does not focus a field.** Grabbing focus raises the on-screen
-  keyboard over the scene on a phone, and it would leave `lat` permanently
-  mid-edit, which is exactly what `sync()` refuses to overwrite.
-- An out-of-range coordinate is **rejected, not clamped**: the field snaps back
-  to the value the sky is drawn from. `parseView`'s garbage→default rule is
-  right for a URL typed once and wrong for a field being edited.
-- The gear is U+2699 **plus U+FE0E**. Without the variation selector, iOS and
-  Android draw a full-colour emoji cog — the one thing on this page that could
-  look less like the rest of the drawing.
-- **The panel is ASCII only** (the gear, outside it, is the one exception
-  above) and is drawn as one ruled column — no title, two blocks split by a
-  blank line, where you stand above and what the sky shows below:
-
-  ```
-   lat   - [  41.39 ] +
-   lon   - [   2.17 ] +
-   dir   n  e (s) w
-
-   stars low (medium) high
-   show [ ] constellations
-        [ ] names
-  ```
-
-  Every label is padded to `LABEL_COLS` (6, ` stars`), so each control
-  starts in the same cell. On/off is a checkbox (`[x]`), pick-one is a radio
-  mark (`(s)`), and the brackets carry the state with no colour at all. Every
-  button is at least three cells wide — a stepper is ` - `/` + ` with its
-  spaces, a checkbox includes its word, as a `<label>` would — because a
-  one-cell button was a ten-pixel target on a phone. Keyboard focus is the
-  field's highlight block on every control, never a ring round characters.
-- Every direction slot is three cells (`(s)` marked, ` s ` not), so clicking one
-  cannot shift the row.
-- **A tap-target overhang never covers another control.** The buttons grow
-  their targets 0.7em up and down with `::after`s, which reaches past the
-  middle of the next row, and a later button paints over an earlier one: the
-  density row took most of the constellations switch — disabled `medium`
-  then swallowed the click that would turn the figures off — and the compass
-  took the bottom of the longitude field. The overhangs carry `z-index: -1`
-  (inside `.menu`'s stacking context), so they only claim space no real box
-  is drawn in. A disabled density slot drops its overhang: its opacity makes
-  it a stacking context of its own, which would lift the overhang back up.
-- No click-outside-to-close, no geolocation, no presets: the
-  fragment *is* the state, and it is already shareable.
-- The **constellations** preference defaults off and persists in the guarded
-  `localStorage` key `ihaveacat.constellations`. It shares `settingschange`
-  with names. Names persist in `ihaveacat.names`, and the formatted vantage
-  in `ihaveacat.view`. A nonempty URL fragment takes precedence over the saved
-  vantage; storage failures never prevent changing settings.
-- The **star density** row (`stars low (medium) high`) sits directly above
-  constellations, marked like the compass so marking a slot shifts nothing.
-  It persists in `ihaveacat.density` and travels in `settingschange` as
-  `density`; an absent or unknown value is medium. **Constellations on forces
-  high and disables low and medium; turning them off leaves high selected
-  and re-enables the other two** — the owner's decision: switching the
-  figures off is not a request for fewer stars. The lock lives in three
-  places on purpose: `rows()` cannot draw another slot marked while
-  constellations are on, `setDensity` refuses it (not just `disabled`), and
-  `main.js` renders high whenever the figures are on, because a figure
-  without its faint endpoints has no positions for them and comes apart. A
-  saved constellations-on beside any other saved density loads as high.
-- Coordinate rows use `lat - [number] +` (and `lon`). Each stepper steps by 1°
-  and clamps at ±90° latitude or ±180° longitude; typed invalid values are
-  still rejected.
-  Holding an arrow steps immediately, waits 500 ms, then repeats with intervals
-  accelerating from 256 ms down to 60 ms. Release, pointer cancellation, loss
-  of focus, hiding the page or closing the panel stops the hold. The release
-  click does not add another step; keyboard clicks still work normally.
-- `js/constellations.generated.js` loads before sky.js and contains 88 figures
-  as catalogue-index pairs, maintained directly alongside the star catalogue.
-- `starCells` records optional endpoint positions before collision filtering
-  **and before the horizon and grid tests** — a position is a projection, not
-  a promise that a star is drawn. `main.js` paints an SVG from those positions
-  using its existing measured character metrics. The mask reuses
-  `Scene.starVisible`, including halos.
-- **An edge is drawn when either end is a drawn star.** The other end may be
-  below the horizon, past the window's side, or behind the moon, cat or
-  fence: the line runs to that cell's centre (`Scene.cellCentre`, placed in
-  the visible star's measured text frame) and the mask or the sky's edge ends
-  it. Requiring both ends left holes in every figure that touched the fence
-  or the moon — Hydra lost most of itself and Virgo its arm across the moon
-  at Barcelona. Two hidden ends draw nothing. `starVisible` is bounded by
-  `fenceTop`, not `rows`, because a hidden end can now land in a lawn row.
-  The hover hit test refuses pointer positions in masked cells, since the
-  drawn edges run on under the mask.
-  Sky/view/settings/layout changes update it; foreground animation never does.
-  Each independent edge is trimmed to measured glyph ink bounds, using DOM
-  Range text placement, a measured HTML baseline, and Canvas text metrics
-  (measurement only). Static glyph cutouts also protect stars crossed by an
-  unrelated edge. Lines share the dim star color/opacity tokens and never
-  inherit twinkle animations or animated mask opacity.
-- **The ink box is padded by `Scene.starGap` before either use**, and the same
-  padded box is trimmed against and punched out of the mask. Trimmed to the
-  outline exactly — which is what a zero gap gives — the break has no width at
-  all, and a 0.75px stroke at a quarter opacity then reads as one line passing
-  *under* the star rather than two stopping at it. The two uses have to agree:
-  the mask erases whatever crosses its hole, so a line trimmed less generously
-  than the hole is punched would be eaten there instead of ending cleanly.
-  `STAR_GAP_RATIO` (0.25 of the narrower cell dimension, floored at a pixel) is
-  the knob; at that size no segment is lost at any viewport, which is the
-  constraint — two stars in adjacent cells must still be joined. It was 0.18
-  and raised for breathing room; 0.30 is where vertically adjacent pairs
-  start dropping their edge, so that is the ceiling.
-- **Each figure is its own `<g class="constellation">`** inside the masked
-  group, so hovering one line can light all of them with a single class write.
-  `constellation-on` is the lit state: the twinkle keyframe's bright end, i.e.
-  the same white at full opacity. Nothing new enters the palette and nothing
-  transitions.
-- **The figure hit test is geometric**, like the star one and for a second
-  reason on top of it: the overlay is `pointer-events: none` behind the scene
-  — it has to be, or it would swallow the mousemove that names the stars — so
-  its lines never see a pointer. `main.js` keeps the drawn edges and measures
-  the pointer's distance to them. A highlight cannot outlive a repaint, which
-  discards the `<g>` nodes, so `paintConstellations` puts it back and drops the
-  label's identity key before rebuilding.
-- The names toggle is **persistent locally and deliberately not in the
-  fragment**. The fragment is a shareable description of *what is drawn*; a
-  display preference is neither shareable nor a property of the sky. Having no
-  address bar to travel through, it is announced as a `CustomEvent` on
-  `window` — the `hashchange` analogue. The event name is duplicated as a
-  literal in `main.js` and `menu.js` because main.js loads first and cannot
-  read the constant when it registers, the same reason `hash2` is copied
-  between `sky.js` and `scene.js`; a test pins the two spellings together.
-
-## Star names
-
-Hovering a star names it — the proper name where the star has one, otherwise
-the Bayer designation spelled out, otherwise the catalogue number. Off by
-default, behind the panel's `names` checkbox — named for both, not
-`star names`, because it names figures too. With constellations on too, hovering
-a line names the figure the same way and lights the whole of it.
-
-**The catalogue number appears only where the label is not really a name.**
-`Vega` needs no HD number beside it; `Alpha Lupi` does, because a designation
-is something you look up; and a star whose only name *is* `HD 82668` must not
-say it twice. So 206 of the 343 show a bare name, 130 carry a number, and the
-rest are a number standing alone.
-
-- **The hit test is geometric, and has to be.** The sky is painted as merged
-  runs, so two adjacent stars sharing a twinkle class are a single `<span>`
-  with nothing to attach a listener to. Star identity cannot go in the class
-  either: `cls` is pinned to `/^star( star-[123])?$/` and every emitted class
-  needs a stylesheet rule. So the pointer is converted to a grid cell and
-  looked up. **Highlighting the hovered star is a dead end** for the same
-  reason — don't spend a day on it.
-- The lookup is built from `Scene.starVisible`, **the same predicate
-  `buildScene` uses**, because `starCells()` output is a *superset* of what is
-  painted: anything in the moon, cat or fence halo is dropped. A second copy of
-  that rule in `main.js` would drift silently — nothing would fail, a few stars
-  would just be named while not being on the page.
-- **Exact cell, no snap radius.** Stars are ~1.1% of cells, so a one-cell
-  radius would make a tenth of the sky live and flicker between neighbours
-  inside a constellation. Exact is the only rule that is honest, and the only
-  one testable as a biconditional.
-- The label is chrome: a `<span>` appended to `<body>`, **never inside
-  `<pre id="scene">`**. A `<div>` would inherit the bare `div` rule and become
-  a full-width banner pinned to the bottom of the window — plausible enough in
-  a screenshot to be missed. It carries `pointer-events: none`, or it takes the
-  very mousemove that positions it and flickers itself away.
-- **The label never lies across the moon or the cat.** They are the subject of
-  the picture; a name written over them reads as damage, and hiding the
-  overlapping part would be worse. Placement tries below-right, below-left,
-  above-right, above-left and takes the first that is on screen *and* clear of
-  both — so the viewport edge and the two subjects share one rule rather than
-  each getting their own special case. If nothing is clear it stays on screen
-  and accepts the overlap, because vanishing would read as a broken feature.
-  The test constructs the near-miss rather than hoping a star sits close
-  enough, which depends on the date.
-- **Not wired to `motionGen`.** The label does not animate, and gating it on
-  reduced motion would take star names away from people who asked for less
-  movement, not less information. A test pins that.
-- Hover is guarded by `matchMedia('(hover: hover)')`, checked live: a tap
-  synthesises one `mousemove` and never a `mouseleave`, so a touch device would
-  otherwise light a label and keep it lit.
-- `render()` ends in a *condition*, not an early return. The hoisted cell
-  metrics must be assigned on every resize, including one that keeps the same
-  cell count — an early return there once left them stale.
-- The dense table stops at `SKY_MAG_LIMIT` rather than covering all 1,657
-  stars, which keeps it at ~9 KB. Raising the limit fails a test rather than
-  silently producing anonymous stars. The constellation endpoints below the
-  limit — 438 of them, reaching magnitude 6.5 — are named by a second,
-  index-keyed table instead of extending the first: that way the invariant
-  above stays pinned on exactly what a plain sky names, and the ~900 catalogue
-  entries no figure ever touches cost nothing. A star nothing draws stays
-  unnamed, and a test pins that too.
-- **Both lookups go through `hasOwnProperty`.** A plain `NAMES[index]` answers
-  `'constructor'` with a Function and calls it a star, and the index reaches
-  `starLabel` from a hovered cell, so a string is not hypothetical.
-- **The `names` checkbox is the one switch for anything answering the pointer**
-  — the owner's decision. Hovering a figure lights it and writes its name into
-  the same `.star-name` label only while names are on (and the figures, of
-  course); with names off the lines are scenery and hold still, and a
-  mousemove costs one comparison. Where both answer — near the end of a
-  figure — the star wins the label and the figure still lights.
-- Both name tables follow the same rule: proper name, else the Bayer
-  designation spelled out, else Flamsteed, else the catalogue number standing
-  in as the name. Preserve that rule when editing the shipped tables.
-- Two harness traps this uncovered: the stub `matchMedia` used to ignore its
-  argument, so `(hover: hover)` answered with the reduced-motion state; and at
-  the default 1400×900 the grid *exactly* fills the window, so `rect.top` is 0
-  and code ignoring the wrapper's bottom anchoring passes. Hover tests run at
-  1400×939 and assert `top > 0`.
-
-## Determinism
-
-Lawn, weathering and vines are placed by `hash2` over core-relative
-coordinates with no randomness source; the real sky depends only on the load
-instant and the hash-fragment vantage. Either way the scene is identical for
-a given moment and *translates* rather than reshuffles when the window
-resizes — a wider grid reveals more sky at the edges without moving what is
-already shown.
-
-Two traps live here:
-
-- `picketState` takes its hash bits with `>>> 12`. `hash2`'s low bits are
-  measurably biased for post columns (all multiples of 3) and skewed the rates.
-- `fenceChar` is the plain unweathered pattern and feeds `FENCE_ART`, and so the
-  no-JS fallback; `fenceSceneChar` is the weathered one the live scene draws.
-  Keep them separate.
-
-## Moon algorithm
-
-Days since the known new moon of 2000-01-06 18:14 UTC, mod the synodic month
-(29.530588853 d), give the phase fraction; `phaseIndex = round(f * 8) % 8` puts
-each phase in a window centred on the astronomical event (±1.85 d). Waxing
-lights from the right, waning from the left (Northern Hemisphere). Cells are
-shaded against the 13-column disc width, giving a straight vertical terminator;
-the waning crescent exactly reproduces the original static art rows
-(`MMM88&&&&&&&&`).
+- The scene has **no font-size cap or floor**; `BASE_ROWS` (in practice
+  `TOP_PAD_ROWS`) is the only size knob. ([scene](specs/scene.md))
+- The moon stays anchored above the cat — the one unreal object in a real
+  sky. ([sky](specs/sky.md))
+- Meteors fly **only on the cell diagonal**; shallow and steep paths were each
+  built and rejected. ([animations](specs/animations.md))
+- Fireflies blink in place, **only in the lawn rows**.
+  ([animations](specs/animations.md))
+- Constellations on forces high star density; turning them off leaves high
+  selected. ([settings panel](specs/settings-panel.md))
+- The `names` checkbox is the one switch for everything that answers the
+  pointer, stars and figures alike. ([star names](specs/star-names.md))
+- Highlighting the hovered star is a dead end. ([star names](specs/star-names.md))
+- The panel has no click-outside-to-close, no geolocation and no presets: the
+  fragment *is* the state. ([settings panel](specs/settings-panel.md))
