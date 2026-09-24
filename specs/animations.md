@@ -26,8 +26,8 @@ the feature cannot drift the static scene.
 **A frame patches each changed row rather than refilling it**: `applyScene`
 keeps the runs that match at either end and replaces only those between. A
 replaced `<span>` restarts its CSS twinkle, so a refilled row made every star
-on it blink whenever a meteor crossed it. A full `paint()` still builds every
-row.
+on it blink — whenever a meteor crossed it or a named star lit (see
+[star-names.md](star-names.md)). A full `paint()` still builds every row.
 
 ## Tail
 

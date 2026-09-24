@@ -128,6 +128,12 @@ test('every class the scene can emit is styled in css/style.css', () => {
             if (run.cls) run.cls.split(' ').forEach((c) => used.add(c));
         }));
     }
+    // And the star the pointer names, which only a real sky can light.
+    Scene.buildScene({ cols: 220, rows: 90, stars: [{ x: 5, y: 5, char: '*', cls: 'star' }], lit: { x: 5, y: 5 } })
+        .grid.forEach((runs) => runs.forEach((run) => {
+            if (run.cls) run.cls.split(' ').forEach((c) => used.add(c));
+        }));
+    assert.ok(used.has('star-lit'), 'the walk never saw a lit star');
     used.forEach((cls) => {
         assert.ok(defined.has(cls), `class .${cls} is emitted but never styled in css/style.css`);
     });
@@ -320,6 +326,18 @@ test('constellation strokes use the dim star state without twinkle or transition
         assert.match(rules, /transition:\s*none/);
     }
     assert.match(lines, /stroke-linecap:\s*butt/);
+});
+
+test('a named star is held at the twinkle\'s bright end, with nothing animated', () => {
+    const css = readFile('css/style.css');
+    const lit = /\.star\.star-lit\s*\{([^}]+)\}/.exec(css);
+    assert.ok(lit, 'the lit state of a star is never styled');
+    // Compound, so it outranks .star's own twinkle whatever the order.
+    assert.match(lit[1], /opacity:\s*1\b/);
+    assert.match(lit[1], /animation:\s*none/);
+    assert.match(lit[1], /transition:\s*none/);
+    // Brighter than the top of the cycle only by a halo in its own colour.
+    assert.match(lit[1], /text-shadow:[^;]*var\(--star-color\)/);
 });
 
 test('a hovered figure brightens to the star colour, with nothing animated', () => {

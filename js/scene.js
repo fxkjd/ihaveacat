@@ -594,6 +594,8 @@
      * opts.seed: optional integer to vary star/lawn placement; defaults to 0.
      * opts.fireflies: optional array of { x, y, phase } — lit fireflies, in
      *   absolute grid coordinates; entries may be null (an unlit slot).
+     * opts.lit: optional { x, y } — the star the pointer names, drawn lit.
+     *   A no-op on any cell that does not hold a drawn star.
      */
     function buildScene(opts) {
         opts = opts || {};
@@ -754,6 +756,20 @@
                 set(L.coreLeft + sprite.col + k, ty, sprite.text.charAt(k), null);
             }
         });
+
+        /*
+         * The named star, turned up: one class on its one cell, so the run it
+         * sat in splits around it and nothing else changes. Judged after all
+         * the art is down, so only a star that survived it can be lit; and
+         * before the meteor, which may still fly across it.
+         */
+        if (opts.lit) {
+            var lx = opts.lit.x, ly2 = opts.lit.y;
+            if (lx >= 0 && lx < cols && ly2 >= 0 && ly2 < rows) {
+                var litCell = grid[ly2][lx];
+                if (litCell.cls && litCell.cls.indexOf('star') === 0) litCell.cls = 'star star-lit';
+            }
+        }
 
         // Shooting star: drawn last so it can see what is already there, and
         // only where the sky is genuinely free.

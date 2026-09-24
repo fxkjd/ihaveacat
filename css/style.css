@@ -414,6 +414,21 @@
     	animation-duration: 3.6s;
     	animation-delay: -2.1s;
     }
+    /*
+     * The star the pointer names. Held at the twinkle keyframe's bright end —
+     * compound, so it outranks `.star`'s animation wherever it sits — and, as
+     * the top of the cycle is already full strength, given a halo of its own
+     * colour to be brighter than that. Nothing new joins the palette.
+     *
+     * No transition, like the lit figure: the highlight follows the pointer,
+     * and having none keeps it out of the reduced-motion block.
+     */
+    .star.star-lit {
+	opacity: 1;
+	animation: none;
+	transition: none;
+	text-shadow: 0 0 0.3em var(--star-color), 0 0 0.1em var(--star-color);
+    }
     @media (prefers-reduced-motion: reduce) {
 	.star, .star-1, .star-2, .star-3 {
 	    animation: none;

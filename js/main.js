@@ -296,7 +296,7 @@
     /*
      * Replace only the runs that changed, keeping the nodes on either side.
      * A replaced <span> starts its twinkle over, so refilling the whole row
-     * made every star on it blink whenever a meteor crossed it.
+     * made every star on it blink whenever one star lit or a meteor crossed.
      */
     function patchRow(i, runs) {
         var el = rowEls[i], old = rowRuns[i];
@@ -423,9 +423,11 @@
      * A mouse hovers and a finger taps. The mouse looks stars up by exact
      * cell; a tap, by the nearest within a fingertip. Figures are found by
      * distance to a drawn line, because a line is a line and no cell contains
-     * it. Stars and figures are not rivals: where both answer, the star wins
-     * the label and the figure still lights up — for a tap too, though at a
-     * fingertip's reach that is most of the length of a line.
+     * it. One thing answers at a time: the star lights up and takes the
+     * label, and its figure stays dark. A mouse on a star's cell is the star.
+     * So is a tap on it; elsewhere a tap takes whichever of star and line it
+     * landed nearer, or at a fingertip's reach the stars along a line would
+     * leave almost none of it to tap.
      */
     var HOVER_EVENT = 'settingschange';        // must match js/menu.js
     var LABEL_DX = 10, LABEL_DY = 6, LABEL_PAD = 6;
@@ -452,6 +454,7 @@
     var hoverBoxes = null;     // what the label must not be written across
     var hoverKey = null;       // what the label currently describes, tagged
     var hoverFigure = null;    // the lit constellation, or null
+    var litStar = null;        // the hoverNames entry drawn lit, or null
     var ptrX = 0, ptrY = 0, ptrIn = false, ptrQueued = false;   // the mouse
     var tap = null;            // what a finger last named — see tapAt
     var downType = null;       // the pointerType of the gesture a click ends
@@ -469,6 +472,10 @@
         hoverNames = null;
         hoverStars = null;
         hoverBoxes = null;
+        // The lit star is one of the entries being replaced, and its cell may
+        // hold another star by now. Every caller repaints next, and the
+        // updateHover() that follows lights it again where it still is.
+        litStar = null;
         if (!hasSky || !skyStars || !(last.cols > 0) || !SkyMap.starLabel) return;
         var L = Scene.layout(last.cols, last.rows);
         // Cached with the names rather than re-derived per frame: both only
@@ -494,6 +501,19 @@
     function clearHighlight() {
         if (hoverFigure) hoverFigure.group.setAttribute('class', FIGURE_CLASS);
         hoverFigure = null;
+    }
+
+    /*
+     * The star is lit in the scene itself, through buildScene's `lit`: a
+     * class on its one cell, so the painted glyph is the one turned up and
+     * nothing is laid over it. A repaint only when the star changes — a
+     * pointer move within its cell costs nothing — and patchRow keeps the
+     * rest of its row, twinkles and all.
+     */
+    function lightStar(star) {
+        if (star === litStar) return;
+        litStar = star;
+        redraw();
     }
 
     /*
@@ -523,11 +543,11 @@
         return Scene.starVisible({ x: Math.floor(x / charWpx), y: Math.floor(y / lineHpx) }, L);
     }
 
-    // Nearest figure within reach, in the overlay's own coordinates — which
-    // are the <pre>'s, since the SVG is positioned on its rect. Nearest rather
-    // than first, so where two figures pass close the pointer picks one and
-    // stays with it instead of flickering on data order.
-    function figureAt(x, y, reach) {
+    // Nearest figure within reach, as { hit, d }, in the overlay's own
+    // coordinates — which are the <pre>'s, since the SVG is positioned on its
+    // rect. Nearest rather than first, so where two figures pass close the
+    // pointer picks one and stays with it instead of flickering on data order.
+    function figureNear(x, y, reach) {
         /*
          * The drawn edges run on into the moon, the fence halo and past the
          * horizon, where the mask hides them; the pointer must not find a
@@ -545,7 +565,12 @@
                 if (d < bestD && skyAt(p.x, p.y, L)) { bestD = d; best = hit; }
             });
         });
-        return best;
+        return best ? { hit: best, d: bestD } : null;
+    }
+
+    function figureAt(x, y, reach) {
+        var near = figureNear(x, y, reach);
+        return near ? near.hit : null;
     }
 
     function figureById(id) {
@@ -557,10 +582,10 @@
 
     /*
      * The painted, named star nearest a tap, measured to its cell centre, if
-     * one is within reach — scanning only the cells the reach can touch, so a
-     * tap costs a few dozen property reads rather than a pass over the sky.
-     * Nearest rather than first, so a tap between two stars names the one it
-     * was nearer.
+     * one is within reach, as { star, d } — scanning only the cells the reach
+     * can touch, so a tap costs a few dozen property reads rather than a pass
+     * over the sky. Nearest rather than first, so a tap between two stars
+     * names the one it was nearer.
      */
     function starNear(x, y) {
         if (!hoverNames) return null;
@@ -578,7 +603,7 @@
                 if (d < bestD) { bestD = d; best = s; }
             }
         }
-        return best;
+        return best ? { star: best, d: bestD } : null;
     }
 
     // Does a label placed here lie across the moon or the cat?
@@ -637,8 +662,9 @@
 
     /*
      * What is being pointed at, as { star, figure, x, y }: a painted, named
-     * star entry, a drawn figure, and the cell to anchor the label to when
-     * there is no star. The mouse is looked up where it is, afresh each time.
+     * star entry or a drawn figure — never both, the star taking the pointer
+     * from its figure — and the cell to anchor a figure's label to. The mouse
+     * is looked up where it is, afresh each time.
      * A tap was looked up once, where it landed (tapAt), and is only found
      * again — the star by catalogue index, the figure by id — so a setting
      * that repaints the sky cannot swap in a stranger at the tapped pixel,
@@ -649,9 +675,10 @@
         var col = Math.floor(x / charWpx);
         var row = Math.floor(y / lineHpx);
         var inGrid = col >= 0 && col < last.cols && row >= 0 && row < last.rows;
+        var star = inGrid && hoverNames ? hoverNames[col + ':' + row] || null : null;
         return {
-            star: inGrid && hoverNames ? hoverNames[col + ':' + row] || null : null,
-            figure: inGrid && constellationsOn
+            star: star,
+            figure: !star && inGrid && constellationsOn
                 ? figureAt(x, y, Math.max(HIT_MIN_PX, charWpx * HIT_RATIO)) : null,
             x: col, y: row
         };
@@ -674,6 +701,7 @@
          */
         if (!hoverOn || !(charWpx > 0 && lineHpx > 0) || !(tap || ptrIn)) {
             clearHighlight();
+            lightStar(null);
             hideLabel();
             return;
         }
@@ -690,6 +718,7 @@
             hoverFigure = t.figure;
         }
         var star = t.star;
+        lightStar(star);
         var key = star ? 'star:' + star.index : (t.figure ? 'figure:' + t.figure.figure : null);
         if (!key) {
             hideLabel();
@@ -747,26 +776,38 @@
         if (e.pointerType !== 'mouse') return;
         ptrIn = false;
         clearHighlight();
+        lightStar(null);
         hideLabel();
     });
 
     /*
      * Look a tap up, once, where it landed, and keep what it found by name:
-     * the star by catalogue index, the figure by id, and the cell to anchor a
-     * figure's label to. Null when it landed near nothing — which is how a
+     * the star by catalogue index or the figure by id, and the cell to anchor
+     * a figure's label to. Null when it landed near nothing — which is how a
      * name is put away.
+     *
+     * One of the two, never both. A tap on a star's own cell is the star, as
+     * for the mouse: a line that runs past it can be nearer the finger than
+     * the star's centre is. Anywhere else the nearer wins, a tie going to the
+     * star.
      */
     function tapAt(clientX, clientY) {
         if (!(charWpx > 0 && lineHpx > 0) || !(last.cols > 0)) return null;
         var r = pre.getBoundingClientRect();
         var x = clientX - r.left, y = clientY - r.top;
-        var star = starNear(x, y);
-        var figure = constellationsOn ? figureAt(x, y, TOUCH_REACH_PX) : null;
+        var col = Math.floor(x / charWpx), row = Math.floor(y / lineHpx);
+        var own = hoverNames ? hoverNames[col + ':' + row] || null : null;
+        var star = own ? { star: own, d: 0 } : starNear(x, y);
+        var figure = !own && constellationsOn ? figureNear(x, y, TOUCH_REACH_PX) : null;
+        if (star && figure) {
+            if (figure.d < star.d) star = null;
+            else figure = null;
+        }
         if (!star && !figure) return null;
         return {
-            index: star ? star.index : null,
-            figure: figure ? figure.figure : null,
-            x: Math.floor(x / charWpx), y: Math.floor(y / lineHpx)
+            index: star ? star.star.index : null,
+            figure: figure ? figure.hit.figure : null,
+            x: col, y: row
         };
     }
 
@@ -886,6 +927,7 @@
             rows: last.rows,
             moonRows: moonRows,
             stars: skyStars,
+            lit: litStar,
             tailFrame: anim.tailFrame,
             meteor: anim.meteor,
             fireflies: anim.fireflies

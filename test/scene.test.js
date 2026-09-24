@@ -449,6 +449,39 @@ test('a supplied real sky replaces the hash stars and obeys the same halos', () 
     assert.equal(starCells, 0, 'hash stars leaked through a supplied sky');
 });
 
+test('lit turns up the one star at its cell, and nothing that is not a star', () => {
+    const opts = { cols: 140, rows: 50, moonRows: MoonPhase.renderMoonRows(4) };
+    const L = Scene.buildScene(opts).layout;
+    // Two stars side by side in one twinkle class are one run: lighting one
+    // must split it rather than light both.
+    const stars = [
+        { x: 5, y: 5, char: '*', cls: 'star star-2' },
+        { x: 6, y: 5, char: '.', cls: 'star star-2' },
+        { x: 20, y: 5, char: '\'', cls: 'star' }
+    ];
+    const plain = Scene.buildScene({ ...opts, stars });
+    const before = Scene.sceneToCells(plain);
+    const lit = Scene.sceneToCells(Scene.buildScene({ ...opts, stars, lit: { x: 5, y: 5 } }));
+    assert.equal(lit[5][5].char, '*');
+    assert.equal(lit[5][5].cls, 'star star-lit');
+    lit.forEach((row, y) => row.forEach((c, x) => {
+        if (x === 5 && y === 5) return;
+        assert.deepEqual(c, before[y][x], `lighting (5,5) changed (${x},${y})`);
+    }));
+
+    // A blank cell, the moon, the cat and the lawn are not stars: lit is a
+    // no-op there rather than a new glyph or a class on the art.
+    const lawn = { x: 3, y: L.groundRow + 1 };
+    for (const at of [{ x: 40, y: 5 }, { x: L.moonBox.left + 3, y: L.moonBox.top + 3 },
+        { x: L.catBox.left + 3, y: L.catBox.top + 3 }, lawn, { x: -1, y: 5 }, { x: 5, y: 900 }]) {
+        assert.deepEqual(Scene.buildScene({ ...opts, stars, lit: at }).grid, plain.grid,
+            `lit at (${at.x},${at.y}) changed the scene`);
+    }
+    // And no lit is the resting page.
+    assert.deepEqual(Scene.buildScene({ ...opts, stars, lit: null }).grid, plain.grid);
+    assert.equal(Scene.buildScene({ ...opts, lit: { x: 5, y: 5 } }).grid.length, 50);
+});
+
 test('a meteor never shows through the cat', () => {
     // Regression: the cat is an outline, so most of its bounding box is blank.
     // Testing only its glyphs let the streak draw straight through its body.

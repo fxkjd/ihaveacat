@@ -4,8 +4,9 @@ Hovering a star with a mouse, or tapping near one with a finger or pen, names
 it — the proper name where the star has one, otherwise the Bayer designation
 spelled out, otherwise the catalogue number. Off by default, behind the panel's
 `names` checkbox — named for both, not `star names`, because it names figures
-too. With constellations on too, pointing at a line names the figure the same
-way and lights the whole of it (see [constellations.md](constellations.md)). The lookup and label live in
+too. The named star lights up. With constellations on too, pointing at a line
+names the figure the same way and lights the whole of it (see
+[constellations.md](constellations.md)). The lookup, label and light live in
 `main.js`; the tables in `sky.js` (see [sky.md](sky.md)).
 
 **The catalogue number appears only where the label is not really a name.**
@@ -21,8 +22,7 @@ rest are a number standing alone.
   with nothing to attach a listener to. Star identity cannot go in the class
   either: `cls` is pinned to `/^star( star-[123])?$/` and every emitted class
   needs a stylesheet rule. So the pointer is converted to a grid cell and
-  looked up. **Highlighting the hovered star is a dead end** for the same
-  reason — don't spend a day on it.
+  looked up.
 - The lookup is built from `Scene.starVisible`, **the same predicate
   `buildScene` uses**, because `starCells()` output is a *superset* of what is
   painted: anything in the moon, cat or fence halo is dropped. A second copy of
@@ -42,13 +42,20 @@ rest are a number standing alone.
   — the owner's decision. Hovering a figure lights it and writes its name into
   the same `.star-name` label only while names are on (and the figures, of
   course); with names off the lines are scenery and hold still, and a
-  pointer move costs one comparison. Where both answer — near the end of a
-  figure — the star wins the label and the figure still lights.
-- **For a tap too the star wins** — the owner's decision, made knowing the
-  cost: at 22px most points on a line have a named star in reach (65% on a
-  phone, 58% on a desktop window), so tapping a line mostly lights its figure
-  and names a star on it.
-  A figure's own name comes from the middle of its longer lines.
+  pointer move costs one comparison. The star's light is on the same switch.
+- **One thing answers at a time: a star takes the pointer from its figure** —
+  the owner's decision. The star lights and takes the label; its figure stays
+  dark. It used to light too, which read as the star being part of a
+  highlight rather than the thing named. For the mouse, a star's cell is the
+  star, and a line is only looked for where no star is.
+- **A tap takes the nearer of star and line**, measured to the star's cell
+  centre and to the drawn edge — the owner's choice over the star always
+  winning. At 22px most points on a line have a named star in reach (65% on a
+  phone, 58% on a desktop window), so with the star always winning a figure
+  could scarcely be tapped at all. **A tap on a star's own cell is the star**,
+  as for the mouse: a line is trimmed at the star's ink, inside its cell, and
+  there the line is nearer the finger than the star's centre is. A tie goes to
+  the star. A figure's own name comes from the middle of its longer lines.
 - **Routed by `pointerType` per event, never by the device.** A mouse hovers
   (`pointermove`/`pointerleave`); a finger or pen taps. `(hover: hover)`
   describes only the *primary* pointer: it hid names from phones entirely, and
@@ -85,6 +92,29 @@ rest are a number standing alone.
 - `render()` ends in a *condition*, not an early return. The hoisted cell
   metrics must be assigned on every resize, including one that keeps the same
   cell count — an early return there once left them stale.
+
+## Lit star
+
+- **The star is lit in the scene itself**: `main.js` passes the named entry to
+  `buildScene` as `lit`, which gives that one cell the class `star star-lit`.
+  The lookup already knows the cell, so this needs no star identity in the
+  DOM — which is why it is not the dead end a listener or a per-star class
+  would be — and one class needs one rule. Nothing is laid over the glyph, so
+  there is nothing to align with it. `lit` is a no-op on any cell that does not
+  hold a drawn star.
+- **The lit state is the twinkle keyframe's bright end plus a halo** in the
+  star's own colour: at the top of its cycle a star is already at full
+  strength, so only the halo makes it brighter. Nothing new joins the palette,
+  and nothing transitions, which keeps it out of the reduced-motion block. It
+  survives a reduced-motion flip, like the label.
+- **It repaints only when the lit star changes**, and `applyScene` patches the
+  row rather than refilling it (see [animations.md](animations.md)). A
+  replaced `<span>` restarts its twinkle, so refilling the row made every
+  other star on it blink each time a star lit.
+- It goes out wherever the label does. It is dropped with the lookup
+  whenever the sky is rebuilt, since its cell may hold another star by then;
+  the `updateHover()` that follows every rebuild lights it again where it
+  still is.
 
 ## Label
 

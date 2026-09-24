@@ -59,7 +59,9 @@ hovering a figure is gated on the names checkbox (see
   — so its lines never see a pointer. `main.js` keeps the drawn edges and
   measures the pointer's distance to them — within two fifths of a cell for a
   mouse, within the 22px tap reach for a finger (see
-  [star-names.md](star-names.md)). **The sky must show at the point of the line
+  [star-names.md](star-names.md)). **A figure lights only where no star
+  answers**: a star takes the pointer and lights alone, and a tap takes the
+  nearer of star and line (see [star-names.md](star-names.md)). **The sky must show at the point of the line
   the pointer is taken to mean**, not only under the pointer: within a
   fingertip's reach those are often different cells, and a tap beside the
   moon otherwise lit Canis Major through the stretch the moon hides. A

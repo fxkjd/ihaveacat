@@ -1163,7 +1163,7 @@ test('a star hidden behind the moon or the cat is never named', () => {
     assert.deepEqual(page.errors, []);
 });
 
-test('the label is chrome: it never touches a cell of the scene', () => {
+test('the label is chrome: it never paints into the scene', () => {
     const page = hoverPage();
     const before = page.text();
     page.setNames(true);
@@ -1172,7 +1172,8 @@ test('the label is chrome: it never touches a cell of the scene', () => {
     page.tick();
 
     assert.equal(page.label().hidden, false);
-    assert.equal(page.text(), before, 'naming a star redrew the scene');
+    // The star lights — a class on its cell — but no glyph changes.
+    assert.equal(page.text(), before, 'naming a star changed a glyph');
     // And it lives outside the <pre>, not in it.
     assert.equal(page.byClass('star-name').length, 1);
     const inPre = [];
@@ -1650,6 +1651,127 @@ test('the name is never written across the moon or the cat', () => {
     assert.deepEqual(page.errors, []);
 });
 
+/* ---- the lit star ------------------------------------------------------- */
+
+// The grid row spans, without the '\n' text nodes between them.
+function rowsOf(page) {
+    return page.pre.children.filter((c) => c.tagName === 'span');
+}
+
+// Each node of a row with the column it starts at.
+function runsOf(row) {
+    let x = 0;
+    return row.children.map((node) => {
+        const at = x;
+        x += (node.textContent || node.nodeValue || '').length;
+        return { node, x: at };
+    });
+}
+
+// The cells the <pre> paints lit, read back off the DOM.
+function litCells(page) {
+    const out = [];
+    rowsOf(page).forEach((row, y) => runsOf(row).forEach(({ node, x }) => {
+        if (String(node.className).split(' ').indexOf('star-lit') < 0) return;
+        for (let i = 0; i < node.textContent.length; i++) out.push({ x: x + i, y });
+    }));
+    return out;
+}
+
+test('hovering a star lights it, and only it, without restarting its row', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const sky = skyFor();
+    const painted = new Set(sky.cells.filter((p) => Scene.starVisible(p, sky.layout)).map((p) => p.x + ':' + p.y));
+    // A star with no neighbour to share its run, and a row-mate further off
+    // whose twinkle a rebuilt row would restart.
+    const s = sky.shown.find((t) => !painted.has((t.x - 1) + ':' + t.y) && !painted.has((t.x + 1) + ':' + t.y) &&
+        sky.shown.some((o) => o.y === t.y && Math.abs(o.x - t.x) > 1));
+    assert.ok(s, 'no star shares its row with another to test with');
+    const before = page.text();
+    const mates = runsOf(rowsOf(page)[s.y])
+        .filter(({ node, x }) => String(node.className).indexOf('star') === 0 && x !== s.x)
+        .map(({ node }) => node);
+
+    page.hover(s.x, s.y);
+    page.tick();
+    assert.deepEqual(litCells(page), [{ x: s.x, y: s.y }]);
+    assert.equal(page.label().textContent, labelFor(s));
+    assert.equal(page.text(), before, 'lighting a star changed a glyph');
+    // The same nodes, not equal ones: a replaced <span> starts its twinkle
+    // over, and the whole row would blink every time a star lit.
+    mates.forEach((m) => assert.ok(rowsOf(page)[s.y].children.includes(m),
+        'a row-mate was rebuilt, restarting its twinkle'));
+
+    // Off the star, out of the scene, and names off: each puts it out.
+    const blank = [1, 2, 3, 4, 5].map((dx) => ({ x: s.x + (s.x < sky.grid.cols / 2 ? dx : -dx), y: s.y }))
+        .find((c) => !painted.has(c.x + ':' + c.y));
+    page.hover(blank.x, blank.y);
+    page.tick();
+    assert.deepEqual(litCells(page), [], 'the star stayed lit after the pointer left it');
+    page.hover(s.x, s.y);
+    page.tick();
+    page.leave();
+    assert.deepEqual(litCells(page), [], 'the star stayed lit after the pointer left the scene');
+    page.hover(s.x, s.y);
+    page.tick();
+    page.setNames(false);
+    assert.deepEqual(litCells(page), [], 'the star stayed lit with names off');
+    page.hover(s.x, s.y);
+    page.tick();
+    assert.deepEqual(litCells(page), [], 'a star lit while names are off');
+    assert.equal(page.text(), before);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a tapped star is lit until the next tap, and a new grid or vantage lets it go', () => {
+    const page = hoverPage();
+    page.setNames(true);
+    const lone = loneStar(page, skyFor());
+    const s = lone.star;
+
+    page.tapAt(besideStar(page, lone, TOUCH_REACH * 0.7));
+    assert.deepEqual(litCells(page), [{ x: s.x, y: s.y }], 'a tap beside the star did not light it');
+    for (let i = 0; i < 30; i++) page.tick();
+    assert.deepEqual(litCells(page), [{ x: s.x, y: s.y }], 'the light went out when the finger lifted');
+    page.resize(HOVER_W, HOVER_H);
+    page.tick();
+    assert.deepEqual(litCells(page), [{ x: s.x, y: s.y }], 'a resize that moved nothing put the light out');
+
+    page.tapAt(besideStar(page, lone, TOUCH_REACH * 1.3));
+    assert.deepEqual(litCells(page), [], 'a tap on empty sky left the star lit');
+
+    // A new grid renumbers every cell, and a new vantage is a different sky.
+    page.tap(s.x, s.y);
+    page.resize(1100, 780);
+    page.tick();
+    assert.deepEqual(litCells(page), [], 'the lit star survived a new grid');
+    page.resize(HOVER_W, HOVER_H);
+    page.tick();
+    page.tap(s.x, s.y);
+    assert.deepEqual(litCells(page), [{ x: s.x, y: s.y }]);
+    page.setHash('#lat=41.39&lon=3.17&dir=s');
+    page.tick();
+    assert.deepEqual(litCells(page), [], 'the lit star survived a new vantage');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a lit star survives the reduced-motion flip', () => {
+    // Less movement, not less information: the light does not move.
+    const page = hoverPage();
+    page.setNames(true);
+    const s = skyFor().shown[0];
+    page.hover(s.x, s.y);
+    page.tick();
+    page.setReducedMotion(true);
+    page.tick();
+    assert.deepEqual(litCells(page), [{ x: s.x, y: s.y }]);
+    page.setReducedMotion(false);
+    page.tick();
+    assert.deepEqual(litCells(page), [{ x: s.x, y: s.y }]);
+    assert.deepEqual(page.errors, []);
+});
+
 /* ---- constellation hover ------------------------------------------------ */
 
 // The figures main.js should have drawn, in its order, with their geometry —
@@ -1860,7 +1982,7 @@ test('a repaint re-lights the figure the pointer is still on', () => {
     assert.deepEqual(page.errors, []);
 });
 
-test('a star at the end of a figure is named, and its figure still lights', () => {
+test('a star at the end of a figure is named and lit, and its figure stays dark', () => {
     const page = constellationPage();
     const info = figuresFor(page);
     const reach = mouseReach(info.charW);
@@ -1871,19 +1993,118 @@ test('a star at the end of a figure is named, and its figure still lights', () =
         const f = info.figures.find((o) => o.edges.some((e) => edgeDistance(e, x, y) < reach));
         if (f) { found = { star: s, figure: f, x, y }; break; }
     }
-    assert.ok(found, 'no named star in this sky sits on one of its own figure lines');
+    assert.ok(found, 'no named star in this sky sits within reach of one of its figure lines');
     pointAtPixel(page, found.x, found.y);
-    assert.equal(page.label().textContent, labelFor(found.star),
-        'the star should win the label over its figure');
-    assert.equal(page.byClass('constellation-on').length, 1, 'and the figure should still light');
+    assert.equal(page.label().textContent, labelFor(found.star), 'the star should win the label over its figure');
+    assert.deepEqual(litCells(page), [{ x: found.star.x, y: found.star.y }]);
+    assert.equal(page.byClass('constellation-on').length, 0, 'the star lit its figure too');
 
-    // A tap the same: the owner's decision, though at a fingertip's reach it
-    // hands most of the length of a line to the stars along it.
+    // A tap on the star's own cell the same, though its figure's line runs
+    // nearer the finger than the star's centre does.
     page.leave();
     const r = page.rect();
     page.tapAt({ clientX: r.left + found.x, clientY: r.top + found.y });
     assert.equal(page.label().textContent, labelFor(found.star), 'a tap should give the star the label too');
-    assert.equal(page.byClass('constellation-on').length, 1);
+    assert.deepEqual(litCells(page), [{ x: found.star.x, y: found.star.y }]);
+    assert.equal(page.byClass('constellation-on').length, 0, 'a tap on the star lit its figure');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a tap on a star\'s own cell is the star, even where its line runs nearer', () => {
+    // A line is trimmed at the star's ink, which sits inside its cell: tapped
+    // at the line's very end, the line is nearer the finger than the star's
+    // centre, and the nearer rule alone would hand the tap to the figure.
+    const page = constellationPage();
+    const info = figuresFor(page);
+    const named = new Map(info.stars
+        .filter((s) => Scene.starVisible(s, info.layout) && SkyMap.starLabel(s.index))
+        .map((s) => [s.x + ':' + s.y, s]));
+    let found = null;
+    for (const f of info.figures) {
+        for (const e of f.edges) {
+            // Each end, nudged a hair toward the other so the point is on the
+            // line rather than at an end rounding might push off it.
+            for (const [x, y, ox, oy] of [[e.x1, e.y1, e.x2, e.y2], [e.x2, e.y2, e.x1, e.y1]]) {
+                const px = x + 0.001 * (ox - x), py = y + 0.001 * (oy - y);
+                const s = named.get(Math.floor(px / info.charW) + ':' + Math.floor(py / info.lineH));
+                if (!s) continue;
+                const cx = (s.x + 0.5) * info.charW, cy = (s.y + 0.5) * info.lineH;
+                if (Math.hypot(px - cx, py - cy) > 2) { found = { star: s, x: px, y: py }; break; }
+            }
+            if (found) break;
+        }
+        if (found) break;
+    }
+    assert.ok(found, 'no line ends inside its star\'s cell clear of the centre');
+    const r = page.rect();
+    page.tapAt({ clientX: r.left + found.x, clientY: r.top + found.y });
+    assert.equal(page.label().textContent, labelFor(found.star));
+    assert.deepEqual(litCells(page), [{ x: found.star.x, y: found.star.y }]);
+    assert.equal(page.byClass('constellation-on').length, 0, 'a tap on the star\'s cell lit the figure');
+    assert.deepEqual(page.errors, []);
+});
+
+/*
+ * A point off every star's cell, on the sky, with a named star and one line
+ * both within a fingertip — the line nearer when `lineWins`, the star nearer
+ * otherwise — and no other figure within reach to muddy which one lights.
+ * Swept along each line, and for the star out to either side of it too,
+ * since on the line itself the line is always the nearer. The line's own
+ * case stays on it, where the point it is measured to is sky by definition.
+ */
+function contested(info, lineWins) {
+    const stars = info.stars.filter((s) => Scene.starVisible(s, info.layout) && SkyMap.starLabel(s.index));
+    const taken = new Set(info.stars.filter((s) => Scene.starVisible(s, info.layout)).map((s) => s.x + ':' + s.y));
+    const centre = (s) => ({ x: (s.x + 0.5) * info.charW, y: (s.y + 0.5) * info.lineH });
+    const offsets = lineWins ? [0] : [-12, -8, -4, 4, 8, 12];
+    for (const f of info.figures) {
+        for (const e of f.edges) {
+            const len = Math.hypot(e.x2 - e.x1, e.y2 - e.y1);
+            if (!len) continue;
+            for (let t = 0.05; t < 1; t += 0.05) {
+                for (const off of offsets) {
+                    const x = e.x1 + t * (e.x2 - e.x1) - off * (e.y2 - e.y1) / len;
+                    const y = e.y1 + t * (e.y2 - e.y1) + off * (e.x2 - e.x1) / len;
+                    const cell = { x: Math.floor(x / info.charW), y: Math.floor(y / info.lineH) };
+                    if (taken.has(cell.x + ':' + cell.y) || !Scene.starVisible(cell, info.layout)) continue;
+                    if (!info.figures.every((o) => o === f || o.edges.every((oe) => edgeDistance(oe, x, y) > TOUCH_REACH))) continue;
+                    const line = Math.min(...f.edges.map((fe) => edgeDistance(fe, x, y)));
+                    const near = stars.map((s) => ({ s, d: Math.hypot(centre(s).x - x, centre(s).y - y) }))
+                        .sort((a, b) => a.d - b.d)[0];
+                    if (!near || near.d >= TOUCH_REACH) continue;
+                    // Clear margins either way, so the test is about the rule and
+                    // not about a tie broken by rounding.
+                    if (lineWins ? near.d > line + 3 : line > near.d + 3) {
+                        return { figure: f, star: near.s, x, y };
+                    }
+                }
+            }
+        }
+    }
+    return null;
+}
+
+test('a tap nearer a line than a star lights the figure, and nearer the star lights the star', () => {
+    const page = constellationPage();
+    const info = figuresFor(page);
+    const r = page.rect();
+
+    const online = contested(info, true);
+    assert.ok(online, 'no point on a line has a star within reach to contest it');
+    page.tapAt({ clientX: r.left + online.x, clientY: r.top + online.y });
+    const lit = page.byClass('constellation-on');
+    assert.equal(lit.length, 1, 'a tap on the line did not light its figure');
+    assert.equal(lit[0].children.length, online.figure.edges.length);
+    assert.equal(page.label().textContent, online.figure.name);
+    assert.deepEqual(litCells(page), [], 'a tap on the line lit a star');
+
+    // Just off the line, toward a star: the star is nearer, and takes it all.
+    const offline = contested(info, false);
+    assert.ok(offline, 'no point beside a line is nearer a star');
+    page.tapAt({ clientX: r.left + offline.x, clientY: r.top + offline.y });
+    assert.equal(page.label().textContent, labelFor(offline.star));
+    assert.deepEqual(litCells(page), [{ x: offline.star.x, y: offline.star.y }]);
+    assert.equal(page.byClass('constellation-on').length, 0, 'a tap nearer the star lit the figure');
     assert.deepEqual(page.errors, []);
 });
 

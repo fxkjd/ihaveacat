@@ -55,8 +55,8 @@ and update it in the same change when a rule moves.
   persisted display settings.
 - [Constellations](specs/constellations.md) — figure lines, masking, figure
   hover and tap.
-- [Star names](specs/star-names.md) — the hover- and tap-to-name lookup and its
-  label.
+- [Star names](specs/star-names.md) — the hover- and tap-to-name lookup, its
+  label and the lit star.
 - [Testing](specs/testing.md) — what each suite pins, the browser harness and
   its traps.
 
@@ -127,6 +127,7 @@ The owner has decided these; don't reopen them. The reasons are in the specs.
   selected. ([settings panel](specs/settings-panel.md))
 - The `names` checkbox is the one switch for everything that answers the
   pointer, stars and figures alike. ([star names](specs/star-names.md))
-- Highlighting the hovered star is a dead end. ([star names](specs/star-names.md))
+- Pointing at a star lights only that star, never its figure; a tap takes the
+  nearer of star and line. ([star names](specs/star-names.md))
 - The panel has no click-outside-to-close, no geolocation and no presets: the
   fragment *is* the state. ([settings panel](specs/settings-panel.md))

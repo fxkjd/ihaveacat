@@ -32,7 +32,8 @@ webpage code and assets only — keep development tooling out of the suite.
   with no `pointerType` — and sends the pointer events and the click to the
   window with a `target`, since the stub does not bubble and `main.js` hears
   taps there. Its `insertBefore` moves a fragment's children in, as
-  `appendChild` does, so a patched row can be read back node for node.
+  `appendChild` does, so a patched row can be read back node for node — the
+  lit-star test checks the row-mates are the *same* nodes, not equal ones.
 
 ## Harness traps
 
